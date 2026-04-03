@@ -1,0 +1,25 @@
+<vector xmlns:android="http://schemas.android.com/apk/res/android"
+    android:width="64dp" android:height="64dp"
+    android:viewportWidth="64" android:viewportHeight="64">
+    <path android:fillColor="@color/colorPrimary"
+        android:pathData="
+            M52,12 m-2,0 a2,2 0 1,1 4,0 a2,2 0 1,1 -4,0
+
+            M40,24 m-2,0 a2,2 0 1,1 4,0 a2,2 0 1,1 -4,0
+            M52,24 m-2,0 a2,2 0 1,1 4,0 a2,2 0 1,1 -4,0
+
+            M28,36 m-2,0 a2,2 0 1,1 4,0 a2,2 0 1,1 -4,0
+            M40,36 m-2,0 a2,2 0 1,1 4,0 a2,2 0 1,1 -4,0
+            M52,36 m-2,0 a2,2 0 1,1 4,0 a2,2 0 1,1 -4,0
+
+            M16,48 m-2,0 a2,2 0 1,1 4,0 a2,2 0 1,1 -4,0
+            M28,48 m-2,0 a2,2 0 1,1 4,0 a2,2 0 1,1 -4,0
+            M40,48 m-2,0 a2,2 0 1,1 4,0 a2,2 0 1,1 -4,0
+            M52,48 m-2,0 a2,2 0 1,1 4,0 a2,2 0 1,1 -4,0
+
+            M4,60 m-2,0 a2,2 0 1,1 4,0 a2,2 0 1,1 -4,0
+            M16,60 m-2,0 a2,2 0 1,1 4,0 a2,2 0 1,1 -4,0
+            M28,60 m-2,0 a2,2 0 1,1 4,0 a2,2 0 1,1 -4,0
+            M40,60 m-2,0 a2,2 0 1,1 4,0 a2,2 0 1,1 -4,0
+            M52,60 m-2,0 a2,2 0 1,1 4,0 a2,2 0 1,1 -4,0" />
+</vector>
