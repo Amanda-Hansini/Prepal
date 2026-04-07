@@ -12,6 +12,10 @@ import android.widget.ImageView;
 import android.widget.TextView;
 import android.widget.Toast;
 
+import com.google.firebase.firestore.DocumentSnapshot;
+import com.google.firebase.firestore.FirebaseFirestore;
+import com.google.firebase.firestore.QuerySnapshot;
+
 import androidx.activity.EdgeToEdge;
 import androidx.appcompat.app.AppCompatActivity;
 import androidx.appcompat.widget.AppCompatButton;
@@ -26,6 +30,7 @@ public class MainActivity extends AppCompatActivity {
     private AppCompatButton btnLogin;
     private TextView tvSignUp, tvForgotPassword;
     private boolean isPasswordVisible = false;
+    private int authFailedAttempts = 0;
 
     @Override
     protected void onCreate(Bundle savedInstanceState) {
@@ -89,18 +94,59 @@ public class MainActivity extends AppCompatActivity {
                 return;
             }
 
-            // Simulate Login Process
-            Toast.makeText(this, "Logging in...", Toast.LENGTH_SHORT).show();
-            
-            Intent intent;
-            if (email.toLowerCase().startsWith("adm") || email.toLowerCase().contains("admin")) {
-                intent = new Intent(MainActivity.this, AdminHomeActivity.class);
-            } else {
-                intent = new Intent(MainActivity.this, StudentHomeActivity.class);
-            }
-            startActivity(intent);
-            finish();
-            // TODO: Implement actual authentication here
+            // Implement actual authentication here
+            Toast.makeText(this, "Verifying Details...", Toast.LENGTH_SHORT).show();
+            btnLogin.setEnabled(false);
+
+            FirebaseFirestore db = FirebaseFirestore.getInstance();
+
+            // First, let's check if this email exists in our "Admins" table
+            db.collection("Admins").whereEqualTo("email", email).get()
+                    .addOnSuccessListener(queryDocumentSnapshots -> {
+                        if (!queryDocumentSnapshots.isEmpty()) {
+                            // Admin found! Now let's verify the password
+                            DocumentSnapshot adminDoc = queryDocumentSnapshots.getDocuments().get(0);
+                            String storedHashedPassword = adminDoc.getString("hashed_password");
+
+                            // Hash the password the user just typed in
+                            String enteredHashedPassword = SecurityUtils.hashPassword(password);
+
+                            if (enteredHashedPassword.equals(storedHashedPassword)) {
+                                // Passwords match! Login successful
+                                Toast.makeText(MainActivity.this, "Admin Login Successful!", Toast.LENGTH_SHORT).show();
+                                Intent intent = new Intent(MainActivity.this, AdminHomeActivity.class);
+                                startActivity(intent);
+                                finish();
+                            } else {
+                                // Passwords do not match
+                                btnLogin.setEnabled(true);
+                                etPassword.setError("Invalid password");
+                                etPassword.requestFocus();
+                            }
+                        } else {
+                            // Admin NOT found in the database
+                            btnLogin.setEnabled(true);
+                            
+                            // Display the modern "Please register first" popup
+                            AlertDialog.Builder builder = new AlertDialog.Builder(MainActivity.this);
+                            View dialogView = LayoutInflater.from(MainActivity.this).inflate(R.layout.dialog_modern_error, null);
+                            builder.setView(dialogView);
+                            
+                            AlertDialog dialog = builder.create();
+                            if (dialog.getWindow() != null) {
+                                dialog.getWindow().setBackgroundDrawableResource(android.R.color.transparent);
+                            }
+                            
+                            AppCompatButton btnErrorOk = dialogView.findViewById(R.id.btnErrorOk);
+                            btnErrorOk.setOnClickListener(v1 -> dialog.dismiss());
+                            
+                            dialog.show();
+                        }
+                    })
+                    .addOnFailureListener(e -> {
+                        btnLogin.setEnabled(true);
+                        Toast.makeText(MainActivity.this, "Database Error: " + e.getMessage(), Toast.LENGTH_SHORT).show();
+                    });
         });
 
         tvForgotPassword.setOnClickListener(v -> {
@@ -108,36 +154,44 @@ public class MainActivity extends AppCompatActivity {
         });
 
         tvSignUp.setOnClickListener(v -> {
-            showSignUpDialog();
+            if (authFailedAttempts >= 3) {
+                Toast.makeText(MainActivity.this, "Admin sign-up is locked due to too many failed attempts.", Toast.LENGTH_LONG).show();
+                return;
+            }
+
+            // Protected Admin Sign Up with an Organization Key
+            AlertDialog.Builder builder = new AlertDialog.Builder(MainActivity.this);
+            View dialogView = LayoutInflater.from(MainActivity.this).inflate(R.layout.dialog_auth_key, null);
+            builder.setView(dialogView);
+
+            AlertDialog dialog = builder.create();
+            if (dialog.getWindow() != null) {
+                dialog.getWindow().setBackgroundDrawableResource(android.R.color.transparent);
+            }
+
+            EditText etAuthKey = dialogView.findViewById(R.id.etAuthKey);
+            AppCompatButton btnVerifyKey = dialogView.findViewById(R.id.btnVerifyKey);
+
+            btnVerifyKey.setOnClickListener(verifyView -> {
+                String enteredKey = etAuthKey.getText().toString().trim();
+                // The secret organization key defined in code
+                if (enteredKey.equals("Prepal_Admin_Saegis")) {
+                    authFailedAttempts = 0; // Reset attempts on success
+                    dialog.dismiss();
+                    startActivity(new Intent(MainActivity.this, admin_sign_up.class));
+                } else {
+                    authFailedAttempts++;
+                    if (authFailedAttempts >= 3) {
+                        dialog.dismiss();
+                        Toast.makeText(MainActivity.this, "Access Locked. Too many failed attempts.", Toast.LENGTH_LONG).show();
+                    } else {
+                        etAuthKey.setError("Invalid Key. Attempts left: " + (3 - authFailedAttempts));
+                        etAuthKey.requestFocus();
+                    }
+                }
+            });
+
+            dialog.show();
         });
-    }
-
-    private void showSignUpDialog() {
-        AlertDialog.Builder builder = new AlertDialog.Builder(this);
-        View dialogView = LayoutInflater.from(this).inflate(R.layout.dialog_signup_selection, null);
-        builder.setView(dialogView);
-
-        AlertDialog dialog = builder.create();
-        if (dialog.getWindow() != null) {
-            dialog.getWindow().setBackgroundDrawableResource(android.R.color.transparent);
-        }
-
-        AppCompatButton btnStudentSignUp = dialogView.findViewById(R.id.btnStudentSignUp);
-        AppCompatButton btnAdminSignUp = dialogView.findViewById(R.id.btnAdminSignUp);
-        TextView tvCancel = dialogView.findViewById(R.id.tvCancel);
-
-        btnStudentSignUp.setOnClickListener(v -> {
-            dialog.dismiss();
-            startActivity(new Intent(MainActivity.this, sign_up.class));
-        });
-
-        btnAdminSignUp.setOnClickListener(v -> {
-            dialog.dismiss();
-            startActivity(new Intent(MainActivity.this, admin_sign_up.class));
-        });
-
-        tvCancel.setOnClickListener(v -> dialog.dismiss());
-
-        dialog.show();
     }
 }

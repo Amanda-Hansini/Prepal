@@ -9,6 +9,10 @@ import android.widget.ImageView;
 import android.widget.TextView;
 import android.widget.Toast;
 
+import com.google.firebase.firestore.FirebaseFirestore;
+import java.util.HashMap;
+import java.util.Map;
+
 import androidx.activity.EdgeToEdge;
 import androidx.appcompat.app.AppCompatActivity;
 import androidx.appcompat.widget.AppCompatButton;
@@ -128,9 +132,37 @@ public class admin_sign_up extends AppCompatActivity {
                 return;
             }
 
-            // Simulate Sign Up Process
-            Toast.makeText(this, "Signing up...", Toast.LENGTH_SHORT).show();
-            // TODO: Implement actual registration here
+            Toast.makeText(this, "Validating & Saving...", Toast.LENGTH_SHORT).show();
+            btnSignUp.setEnabled(false); // Prevent multiple clicks
+
+            // 1. Hash the password securely
+            String hashedPassword = SecurityUtils.hashPassword(password);
+
+            // 2. Prepare data for Firestore Database
+            Map<String, Object> adminData = new HashMap<>();
+            adminData.put("admin_id", adminId);
+            adminData.put("email", email);
+            adminData.put("hashed_password", hashedPassword);
+            // Storing the account status
+            adminData.put("status", "Active");
+
+            // 3. Save to Firestore (Creating a new document inside "Admins" collection)
+            FirebaseFirestore db = FirebaseFirestore.getInstance();
+            
+            // We use the adminId as the Document ID so it's easy to look up later
+            db.collection("Admins").document(adminId)
+                    .set(adminData)
+                    .addOnSuccessListener(aVoid -> {
+                        Toast.makeText(this, "Admin Registered Successfully!", Toast.LENGTH_LONG).show();
+                        // Navigate back to Login
+                        Intent intent = new Intent(admin_sign_up.this, MainActivity.class);
+                        startActivity(intent);
+                        finish();
+                    })
+                    .addOnFailureListener(e -> {
+                        btnSignUp.setEnabled(true);
+                        Toast.makeText(this, "Registration Failed: " + e.getMessage(), Toast.LENGTH_LONG).show();
+                    });
         });
 
         tvLogin.setOnClickListener(v -> {
