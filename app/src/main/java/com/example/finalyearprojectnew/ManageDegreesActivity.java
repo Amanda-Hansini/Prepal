@@ -15,8 +15,12 @@ import androidx.appcompat.app.AppCompatActivity;
 import androidx.appcompat.widget.AppCompatButton;
 import androidx.cardview.widget.CardView;
 
+import com.google.firebase.firestore.FirebaseFirestore;
+
 import java.util.ArrayList;
+import java.util.HashMap;
 import java.util.List;
+import java.util.Map;
 
 public class ManageDegreesActivity extends AppCompatActivity {
 
@@ -38,7 +42,7 @@ public class ManageDegreesActivity extends AppCompatActivity {
         setContentView(R.layout.activity_manage_degrees);
 
         initViews();
-        setupMockData();
+        loadDegrees();
         setupListeners();
     }
 
@@ -58,21 +62,39 @@ public class ManageDegreesActivity extends AppCompatActivity {
         etProgramName = findViewById(R.id.etProgramName);
     }
 
-    private void setupMockData() {
+    private void loadDegrees() {
         degreeList = new ArrayList<>();
-        degreeList.add(new Degree("BIT", "Bachelor of Information Technology"));
-        degreeList.add(new Degree("BSE", "Bachelor of Software Engineering"));
-        degreeList.add(new Degree("BCS", "Bachelor of Computer Science"));
-
+        
         List<String> degreeNames = new ArrayList<>();
         degreeNames.add("Select a Degree...");
-        for (Degree d : degreeList) {
-            degreeNames.add(d.getName());
-        }
-
         ArrayAdapter<String> adapter = new ArrayAdapter<>(this, android.R.layout.simple_spinner_item, degreeNames);
         adapter.setDropDownViewResource(android.R.layout.simple_spinner_dropdown_item);
         spinnerDegrees.setAdapter(adapter);
+
+        FirebaseFirestore db = FirebaseFirestore.getInstance();
+        db.collection("Degrees").get()
+                .addOnSuccessListener(queryDocumentSnapshots -> {
+                    degreeList.clear();
+                    degreeNames.clear();
+                    degreeNames.add("Select a Degree...");
+                    
+                    for (com.google.firebase.firestore.DocumentSnapshot doc : queryDocumentSnapshots) {
+                        String id = doc.getString("id");
+                        String name = doc.getString("name");
+                        if (id != null && name != null) {
+                            degreeList.add(new Degree(id, name));
+                            degreeNames.add(name);
+                        }
+                    }
+                    
+                    ArrayAdapter<String> updatedAdapter = new ArrayAdapter<>(ManageDegreesActivity.this, 
+                            android.R.layout.simple_spinner_item, degreeNames);
+                    updatedAdapter.setDropDownViewResource(android.R.layout.simple_spinner_dropdown_item);
+                    spinnerDegrees.setAdapter(updatedAdapter);
+                })
+                .addOnFailureListener(e -> {
+                    Toast.makeText(this, "Failed to load degrees", Toast.LENGTH_SHORT).show();
+                });
     }
 
     private void setupListeners() {
@@ -113,23 +135,39 @@ public class ManageDegreesActivity extends AppCompatActivity {
                 return;
             }
 
-            // Simulate saving
-            degreeList.add(new Degree(id, name));
+            Toast.makeText(this, "Saving Program...", Toast.LENGTH_SHORT).show();
+            btnSaveProgram.setEnabled(false);
 
-            // Refresh spinner
-            List<String> degreeNames = new ArrayList<>();
-            degreeNames.add("Select a Degree...");
-            for (Degree d : degreeList) {
-                degreeNames.add(d.getName());
-            }
-            ArrayAdapter<String> adapter = new ArrayAdapter<>(ManageDegreesActivity.this,
-                    android.R.layout.simple_spinner_item, degreeNames);
-            adapter.setDropDownViewResource(android.R.layout.simple_spinner_dropdown_item);
-            spinnerDegrees.setAdapter(adapter);
-            spinnerDegrees.setSelection(degreeList.size()); // select the newly added item
+            FirebaseFirestore db = FirebaseFirestore.getInstance();
+            Map<String, Object> degreeData = new HashMap<>();
+            degreeData.put("id", id);
+            degreeData.put("name", name);
 
-            Toast.makeText(this, "Program saved successfully", Toast.LENGTH_SHORT).show();
-            closeAddProgramForm();
+            db.collection("Degrees").document(id)
+                    .set(degreeData)
+                    .addOnSuccessListener(aVoid -> {
+                        btnSaveProgram.setEnabled(true);
+                        Toast.makeText(ManageDegreesActivity.this, "Program saved successfully", Toast.LENGTH_SHORT).show();
+                        
+                        degreeList.add(new Degree(id, name));
+
+                        List<String> degreeNames = new ArrayList<>();
+                        degreeNames.add("Select a Degree...");
+                        for (Degree d : degreeList) {
+                            degreeNames.add(d.getName());
+                        }
+                        ArrayAdapter<String> adapter = new ArrayAdapter<>(ManageDegreesActivity.this,
+                                android.R.layout.simple_spinner_item, degreeNames);
+                        adapter.setDropDownViewResource(android.R.layout.simple_spinner_dropdown_item);
+                        spinnerDegrees.setAdapter(adapter);
+                        spinnerDegrees.setSelection(degreeList.size()); // select the newly added item
+
+                        closeAddProgramForm();
+                    })
+                    .addOnFailureListener(e -> {
+                        btnSaveProgram.setEnabled(true);
+                        Toast.makeText(ManageDegreesActivity.this, "Failed to save: " + e.getMessage(), Toast.LENGTH_SHORT).show();
+                    });
         });
     }
 

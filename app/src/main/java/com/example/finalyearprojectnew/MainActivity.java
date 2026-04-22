@@ -124,23 +124,66 @@ public class MainActivity extends AppCompatActivity {
                                 etPassword.requestFocus();
                             }
                         } else {
-                            // Admin NOT found in the database
-                            btnLogin.setEnabled(true);
-                            
-                            // Display the modern "Please register first" popup
-                            AlertDialog.Builder builder = new AlertDialog.Builder(MainActivity.this);
-                            View dialogView = LayoutInflater.from(MainActivity.this).inflate(R.layout.dialog_modern_error, null);
-                            builder.setView(dialogView);
-                            
-                            AlertDialog dialog = builder.create();
-                            if (dialog.getWindow() != null) {
-                                dialog.getWindow().setBackgroundDrawableResource(android.R.color.transparent);
-                            }
-                            
-                            AppCompatButton btnErrorOk = dialogView.findViewById(R.id.btnErrorOk);
-                            btnErrorOk.setOnClickListener(v1 -> dialog.dismiss());
-                            
-                            dialog.show();
+                            // Admin NOT found, let's check Students table using studentId
+                            db.collection("Students").whereEqualTo("studentId", email).get()
+                                .addOnSuccessListener(studentSnapshots -> {
+                                    if (!studentSnapshots.isEmpty()) {
+                                        // Student found
+                                        DocumentSnapshot studentDoc = studentSnapshots.getDocuments().get(0);
+                                        String storedHashedPassword = studentDoc.getString("hashed_password");
+                                        String status = studentDoc.getString("status");
+                                        Boolean isFirstLogin = studentDoc.getBoolean("isFirstLogin");
+                                        
+                                        if ("inactive".equalsIgnoreCase(status)) {
+                                            btnLogin.setEnabled(true);
+                                            Toast.makeText(MainActivity.this, "Your account is inactive. Please contact Admin.", Toast.LENGTH_LONG).show();
+                                            return;
+                                        }
+
+                                        String enteredHashedPassword = SecurityUtils.hashPassword(password);
+                                        if (enteredHashedPassword.equals(storedHashedPassword)) {
+                                            Toast.makeText(MainActivity.this, "Student Login Successful!", Toast.LENGTH_SHORT).show();
+                                            
+                                            // Check First Login Strategy
+                                            if (Boolean.TRUE.equals(isFirstLogin)) {
+                                                Intent intent = new Intent(MainActivity.this, ChangePasswordActivity.class);
+                                                intent.putExtra("STUDENT_ID", studentDoc.getString("studentId"));
+                                                startActivity(intent);
+                                            } else {
+                                                Intent intent = new Intent(MainActivity.this, StudentHomeActivity.class);
+                                                startActivity(intent);
+                                                finish();
+                                            }
+                                        } else {
+                                            btnLogin.setEnabled(true);
+                                            etPassword.setError("Invalid password");
+                                            etPassword.requestFocus();
+                                        }
+
+                                    } else {
+                                        // Neither Admin nor Student found
+                                        btnLogin.setEnabled(true);
+                                        
+                                        // Display the modern "Please register first" popup
+                                        AlertDialog.Builder builder = new AlertDialog.Builder(MainActivity.this);
+                                        View dialogView = LayoutInflater.from(MainActivity.this).inflate(R.layout.dialog_modern_error, null);
+                                        builder.setView(dialogView);
+                                        
+                                        AlertDialog dialog = builder.create();
+                                        if (dialog.getWindow() != null) {
+                                            dialog.getWindow().setBackgroundDrawableResource(android.R.color.transparent);
+                                        }
+                                        
+                                        AppCompatButton btnErrorOk = dialogView.findViewById(R.id.btnErrorOk);
+                                        btnErrorOk.setOnClickListener(v1 -> dialog.dismiss());
+                                        
+                                        dialog.show();
+                                    }
+                                })
+                                .addOnFailureListener(studentErr -> {
+                                    btnLogin.setEnabled(true);
+                                    Toast.makeText(MainActivity.this, "Student DB Error: " + studentErr.getMessage(), Toast.LENGTH_SHORT).show();
+                                });
                         }
                     })
                     .addOnFailureListener(e -> {

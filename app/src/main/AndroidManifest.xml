@@ -52,6 +52,14 @@
             android:exported="false" />
 
         <activity
+            android:name=".ManageStudentsActivity"
+            android:exported="false" />
+
+        <activity
+            android:name=".ChangePasswordActivity"
+            android:exported="false" />
+
+        <activity
             android:name=".ManageSemestersActivity"
             android:exported="false" />
 
