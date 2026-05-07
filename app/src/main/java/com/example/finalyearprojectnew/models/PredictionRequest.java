@@ -1,0 +1,37 @@
+package com.example.finalyearprojectnew.models;
+
+import com.google.gson.annotations.SerializedName;
+import java.util.List;
+import java.util.Map;
+
+public class PredictionRequest {
+    @SerializedName("student_id")
+    public String studentId;
+
+    @SerializedName("attendance")
+    public double attendance;
+
+    @SerializedName("study_hours")
+    public double studyHours;
+
+    @SerializedName("sleep_hours")
+    public double sleepHours;
+
+    @SerializedName("screen_time")
+    public double screenTime;
+
+    @SerializedName("work_hours")
+    public double workHours;
+
+    @SerializedName("stress_level")
+    public double stressLevel;
+
+    @SerializedName("study_habits")
+    public double studyHabits;
+
+    @SerializedName("gpa")
+    public double gpa;
+
+    @SerializedName("results")
+    public List<Map<String, Object>> results;
+}
