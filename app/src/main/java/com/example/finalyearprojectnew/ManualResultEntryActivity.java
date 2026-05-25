@@ -227,7 +227,7 @@ public class ManualResultEntryActivity extends AppCompatActivity {
 
                                                             // Populate and pre-select single Batch
                                                             batchList.clear();
-                                                            batchList.add(new BatchInfo(batchDocId, batchName));
+                                                            batchList.add(new BatchInfo(batchDocId, batchName, studentBatchId));
                                                             List<String> batchDisplay = new ArrayList<>();
                                                             batchDisplay.add("Select Batch");
                                                             batchDisplay.add(batchDocId + " - " + batchName);
@@ -280,8 +280,9 @@ public class ManualResultEntryActivity extends AppCompatActivity {
             for (QueryDocumentSnapshot doc : queryDocumentSnapshots) {
                 String id = doc.getId();
                 String name = doc.getString("batchName");
+                String realBatchId = doc.getString("batchId");
                 if (name != null) {
-                    batchList.add(new BatchInfo(id, name));
+                    batchList.add(new BatchInfo(id, name, realBatchId != null ? realBatchId : name));
                     displayNames.add(id + " - " + name);
                 }
             }
@@ -331,7 +332,7 @@ public class ManualResultEntryActivity extends AppCompatActivity {
                                     if (sId != null && bId != null) {
                                         if (bId.equalsIgnoreCase(finalRealBatchId) || bId.equalsIgnoreCase(batchDocId)) {
                                             String fullId = batchDocId + "_" + degId + "_" + sId;
-                                            semesterList.add(new SemesterInfo(fullId, semName.trim().isEmpty() ? sId : semName));
+                                            semesterList.add(new SemesterInfo(fullId, semName.trim().isEmpty() ? sId : semName, sId));
                                             displayNames.add(semName.trim().isEmpty() ? sId : semName);
                                         }
                                     }
@@ -367,9 +368,9 @@ public class ManualResultEntryActivity extends AppCompatActivity {
         }
 
         String degId = degreeList.get(degPos - 1).id;
-        String batchFull = batchList.get(batchPos - 1).id; 
+        String batchFull = batchList.get(batchPos - 1).realBatchId; 
         String semFullId = semesterList.get(semPos - 1).id;
-        String sId = semesterList.get(semPos - 1).name;
+        String sId = semesterList.get(semPos - 1).semesterId;
         
         Toast.makeText(this, "Querying Modules...", Toast.LENGTH_SHORT).show();
         
@@ -572,13 +573,21 @@ public class ManualResultEntryActivity extends AppCompatActivity {
     }
 
     private static class BatchInfo {
-        String id, name;
-        BatchInfo(String id, String name) { this.id = id; this.name = name; }
+        String id, name, realBatchId;
+        BatchInfo(String id, String name, String realBatchId) { 
+            this.id = id; 
+            this.name = name; 
+            this.realBatchId = realBatchId;
+        }
     }
 
     private static class SemesterInfo {
-        String id, name;
-        SemesterInfo(String id, String name) { this.id = id; this.name = name; }
+        String id, name, semesterId;
+        SemesterInfo(String id, String name, String semesterId) { 
+            this.id = id; 
+            this.name = name; 
+            this.semesterId = semesterId;
+        }
     }
 
     private static class ModuleData {
