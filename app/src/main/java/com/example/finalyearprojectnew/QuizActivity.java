@@ -56,6 +56,7 @@ public class QuizActivity extends AppCompatActivity {
     private List<Integer> questionTypes = new ArrayList<>();
     
     private List<String> moduleNamesForAttendance = new ArrayList<>();
+    private List<String> moduleDisplayNamesForAttendance = new ArrayList<>();
     private Map<String, Double> moduleAttendances = new HashMap<>();
     private List<Spinner> attendanceSpinners = new ArrayList<>();
     
@@ -85,9 +86,22 @@ public class QuizActivity extends AppCompatActivity {
         if (studentResults != null) {
             for (Map<String, Object> module : studentResults) {
                 String moduleName = "";
-                Object mNameObj = module.get("moduleName");
+                Object mNameObj = module.get("module_name");
+                if (mNameObj == null) mNameObj = module.get("moduleName");
                 if (mNameObj != null) moduleName = mNameObj.toString();
+
+                String moduleId = "";
+                Object mIdObj = module.get("module_id");
+                if (mIdObj == null) mIdObj = module.get("moduleId");
+                if (mIdObj != null) moduleId = mIdObj.toString();
+
                 moduleNamesForAttendance.add(moduleName);
+                
+                if (!moduleId.isEmpty() && !moduleName.isEmpty()) {
+                    moduleDisplayNamesForAttendance.add(moduleId + " - " + moduleName);
+                } else {
+                    moduleDisplayNamesForAttendance.add(moduleName);
+                }
                 
                 Object creditsObj = module.get("credits");
                 if (creditsObj != null) {
@@ -171,12 +185,12 @@ public class QuizActivity extends AppCompatActivity {
         String[] attendanceOptions = {"90% - 100%", "80% - 89%", "70% - 79%", "Below 70%"};
         ArrayAdapter<String> adapter = new ArrayAdapter<>(this, android.R.layout.simple_spinner_dropdown_item, attendanceOptions);
 
-        for (String moduleName : moduleNamesForAttendance) {
+        for (String displayName : moduleDisplayNamesForAttendance) {
             View itemView = inflater.inflate(R.layout.item_module_attendance, llDynamicContent, false);
             TextView tvModuleName = itemView.findViewById(R.id.tvModuleName);
             Spinner spinnerAttendance = itemView.findViewById(R.id.spinnerAttendance);
             
-            tvModuleName.setText(moduleName);
+            tvModuleName.setText(displayName);
             spinnerAttendance.setAdapter(adapter);
             
             attendanceSpinners.add(spinnerAttendance);
