@@ -46,6 +46,7 @@ public class QuizActivity extends AppCompatActivity {
     private double currentGpa, cumulativeGpa;
     private List<Map<String, Object>> studentResults;
     private String studentId, semesterName;
+    private int targetStudyHours = 0;
 
     private List<String> questions = new ArrayList<>();
     private List<String> contexts = new ArrayList<>();
@@ -133,6 +134,9 @@ public class QuizActivity extends AppCompatActivity {
         
         int totalNotionalHours = totalCredits * 50;
         int weeklyStudyTarget = totalNotionalHours / 15; // standard 15 week semester
+
+        // Store target for later so we can save it to history
+        this.targetStudyHours = weeklyStudyTarget;
 
         // Step 2: Study Hours
         questions.add("How many hours per week do you realistically commit to focused self-study?");
@@ -414,6 +418,7 @@ public class QuizActivity extends AppCompatActivity {
         historyData.put("attendance", requestData.attendance);
         historyData.put("moduleAttendances", requestData.moduleAttendances);
         historyData.put("studyHours", requestData.studyHours);
+        historyData.put("targetStudyHours", this.targetStudyHours); // Save SLQF target!
         historyData.put("sleepHours", requestData.sleepHours);
         historyData.put("stressLevel", requestData.stressLevel); // 1-5 scale
         historyData.put("pssScore", pssTotalScore); // Raw 0-40 scale

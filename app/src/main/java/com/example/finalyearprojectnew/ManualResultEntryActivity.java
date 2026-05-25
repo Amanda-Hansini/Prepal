@@ -333,8 +333,39 @@ public class ManualResultEntryActivity extends AppCompatActivity {
                                         if (bId.equalsIgnoreCase(finalRealBatchId) || bId.equalsIgnoreCase(batchDocId)) {
                                             String fullId = batchDocId + "_" + degId + "_" + sId;
                                             semesterList.add(new SemesterInfo(fullId, semName.trim().isEmpty() ? sId : semName, sId));
-                                            displayNames.add(semName.trim().isEmpty() ? sId : semName);
                                         }
+                                    }
+                                }
+
+                                java.util.Collections.sort(semesterList, new java.util.Comparator<SemesterInfo>() {
+                                    @Override
+                                    public int compare(SemesterInfo s1, SemesterInfo s2) {
+                                        return Integer.compare(extractNumber(s1.semesterId), extractNumber(s2.semesterId));
+                                    }
+                                    private int extractNumber(String str) {
+                                        if (str == null) return 0;
+                                        String num = str.replaceAll("\\D+", "");
+                                        return num.isEmpty() ? 0 : Integer.parseInt(num);
+                                    }
+                                });
+
+                                displayNames.clear();
+                                displayNames.add("Select Semester");
+
+                                if (!isEditMode && historySemesters != null) {
+                                    int nextSemIndex = historySemesters.size();
+                                    if (nextSemIndex < semesterList.size()) {
+                                        SemesterInfo nextSem = semesterList.get(nextSemIndex);
+                                        semesterList.clear();
+                                        semesterList.add(nextSem);
+                                        displayNames.add(nextSem.name);
+                                    } else {
+                                        semesterList.clear();
+                                        displayNames.add("All semesters entered!");
+                                    }
+                                } else {
+                                    for (SemesterInfo info : semesterList) {
+                                        displayNames.add(info.name);
                                     }
                                 }
                                 updateSemesterSpinner(displayNames);
@@ -462,7 +493,7 @@ public class ManualResultEntryActivity extends AppCompatActivity {
         double totalCreditHours = 0;
         double currentSemPoints = 0;
         double currentSemCredits = 0;
-        
+
         boolean cumHasSpecial = false;
         boolean semHasSpecial = false;
 
@@ -523,7 +554,6 @@ public class ManualResultEntryActivity extends AppCompatActivity {
             result.put("semester", currentSem);
             selectedResults.add(result);
 
-            // Deduct credits for special grades (Don't count in divisor) and flag
             if (grade.equals("MC") || grade.equals("AB") || grade.equals("NE") || grade.equals("WH") || grade.equals("INC")) {
                 semHasSpecial = true;
                 cumHasSpecial = true;
@@ -537,24 +567,37 @@ public class ManualResultEntryActivity extends AppCompatActivity {
             totalCreditHours += credits;
         }
 
-        double currentGpa = semHasSpecial ? 0.0 : (currentSemCredits > 0 ? (currentSemPoints / currentSemCredits) : 0);
-        double cumulativeGpa = cumHasSpecial ? 0.0 : (totalCreditHours > 0 ? (totalQualityPoints / totalCreditHours) : 0);
+        double currentGpa = currentSemCredits > 0 ? (currentSemPoints / currentSemCredits) : 0;
+        double cumulativeGpa = totalCreditHours > 0 ? (totalQualityPoints / totalCreditHours) : 0;
         
-        showSummaryDialog(currentGpa, cumulativeGpa, selectedResults, currentSem, semHasSpecial, cumHasSpecial);
+        String displaySemGpa = semHasSpecial ? "INC" : String.format(java.util.Locale.US, "%.2f", currentGpa);
+        String displayCumGpa = cumHasSpecial ? "INC" : String.format(java.util.Locale.US, "%.2f", cumulativeGpa);
+
+        showSummaryDialog(currentGpa, cumulativeGpa, displaySemGpa, displayCumGpa, selectedResults, currentSem);
     }
 
-    private void showSummaryDialog(double currentGpa, double cumulativeGpa, List<Map<String, Object>> results, String semesterName, boolean semHasSpecial, boolean cumHasSpecial) {
-        android.app.AlertDialog.Builder builder = new android.app.AlertDialog.Builder(this);
-        builder.setTitle("Result Summary");
-        
-        String semGpaStr = semHasSpecial ? "N/A" : String.format(java.util.Locale.US, "%.2f", currentGpa);
-        String cumGpaStr = cumHasSpecial ? "N/A" : String.format(java.util.Locale.US, "%.2f", cumulativeGpa);
-        
-        String message = String.format("Semester: %s\n\nCurrent Semester GPA: %s\nCumulative GPA: %s\n\nProceed to Quiz for Future GPA Prediction?", 
-                semesterName, semGpaStr, cumGpaStr);
-        builder.setMessage(message);
-        builder.setPositiveButton("Proceed", (dialog, which) -> {
-            // Proceed to Quiz Activity for lifestyle data
+    private void showSummaryDialog(double currentGpa, double cumulativeGpa, String displaySemGpa, String displayCumGpa, List<Map<String, Object>> results, String semesterName) {
+        android.app.Dialog dialog = new android.app.Dialog(this);
+        dialog.setContentView(R.layout.dialog_results_summary);
+        if (dialog.getWindow() != null) {
+            dialog.getWindow().setBackgroundDrawable(new android.graphics.drawable.ColorDrawable(android.graphics.Color.TRANSPARENT));
+            dialog.getWindow().setLayout(android.view.ViewGroup.LayoutParams.MATCH_PARENT, android.view.ViewGroup.LayoutParams.WRAP_CONTENT);
+        }
+
+        TextView tvSemesterNameDialog = dialog.findViewById(R.id.tvSemesterNameDialog);
+        TextView tvSemGpaDialog = dialog.findViewById(R.id.tvSemGpaDialog);
+        TextView tvCumGpaDialog = dialog.findViewById(R.id.tvCumGpaDialog);
+        androidx.appcompat.widget.AppCompatButton btnEditDialog = dialog.findViewById(R.id.btnEditDialog);
+        androidx.appcompat.widget.AppCompatButton btnProceedDialog = dialog.findViewById(R.id.btnProceedDialog);
+
+        tvSemesterNameDialog.setText(semesterName);
+        tvSemGpaDialog.setText(displaySemGpa);
+        tvCumGpaDialog.setText(displayCumGpa);
+
+        btnEditDialog.setOnClickListener(v -> dialog.dismiss());
+
+        btnProceedDialog.setOnClickListener(v -> {
+            dialog.dismiss();
             android.util.Log.d("MANUAL_DEBUG", "Sending results size: " + results.size());
             Intent intent = new Intent(this, QuizActivity.class);
             intent.putExtra("cumulativeGpa", cumulativeGpa);
@@ -563,8 +606,8 @@ public class ManualResultEntryActivity extends AppCompatActivity {
             intent.putExtra("semesterName", semesterName);
             startActivity(intent);
         });
-        builder.setNegativeButton("Edit", null);
-        builder.show();
+
+        dialog.show();
     }
 
     private static class DegreeInfo {

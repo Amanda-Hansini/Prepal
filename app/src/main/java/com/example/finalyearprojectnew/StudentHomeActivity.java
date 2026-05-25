@@ -91,7 +91,6 @@ public class StudentHomeActivity extends AppCompatActivity {
         tvMotivationTip = findViewById(R.id.tvMotivationTip);
         tvWelcomeText = findViewById(R.id.tvWelcomeText);
         ivProfile = findViewById(R.id.ivProfile);
-        tvSpecialStatusNote = findViewById(R.id.tvSpecialStatusNote);
         tvCurrentDate = findViewById(R.id.tvCurrentDate);
         
         tvSemGpa = findViewById(R.id.tvSemGpa);
@@ -230,16 +229,12 @@ public class StudentHomeActivity extends AppCompatActivity {
                 List<Map<String, Object>> modules = (List<Map<String, Object>>) sem.get("modules");
                 setupPerformanceBarChart(modules);
                 
-                // Check for special statuses to show/hide note
-                boolean hasSpecial = checkForSpecialStatuses(modules);
-                tvSpecialStatusNote.setVisibility(hasSpecial ? View.VISIBLE : View.GONE);
-                
                 // Calculate both Semester GPA and Cumulative GPA locally to ensure 100% consistency
                 double totalPts = 0;
                 double totalCreds = 0;
                 double currentSemPts = 0;
                 double currentSemCreds = 0;
-                
+
                 boolean cumHasSpecial = false;
                 boolean semHasSpecial = false;
 
@@ -247,14 +242,17 @@ public class StudentHomeActivity extends AppCompatActivity {
                     DocumentSnapshot s = allSemesters.get(i);
                     List<Map<String, Object>> mods = (List<Map<String, Object>>) s.get("modules");
                     if (mods == null) continue;
-                    boolean thisSemSpecial = false;
+                    
                     for (Map<String, Object> m : mods) {
                         String grade = (String) m.get("grade");
                         if (grade != null && (grade.equals("MC") || grade.equals("AB") || grade.equals("NE") || grade.equals("WH") || grade.equals("INC"))) {
-                            thisSemSpecial = true;
+                            cumHasSpecial = true;
+                            if (i == position) {
+                                semHasSpecial = true;
+                            }
                             continue;
                         }
-                        
+
                         double c = 0;
                         Object co = m.get("credits");
                         if (co instanceof Double) c = (Double) co;
@@ -273,20 +271,10 @@ public class StudentHomeActivity extends AppCompatActivity {
                             currentSemCreds += c;
                         }
                     }
-                    if (thisSemSpecial) {
-                        cumHasSpecial = true;
-                        if (i == position) {
-                            semHasSpecial = true;
-                        }
-                    }
                 }
                 
                 double semGpa = currentSemCreds > 0 ? (currentSemPts / currentSemCreds) : 0;
-                if (semHasSpecial) {
-                    tvSemGpa.setText("N/A");
-                } else {
-                    tvSemGpa.setText(String.format(java.util.Locale.US, "%.2f", semGpa));
-                }
+                tvSemGpa.setText(semHasSpecial ? "INC" : String.format(java.util.Locale.US, "%.2f", semGpa));
                 
                 String semName = sem.getString("semesterName");
                 tvSemGpaSub.setText(semName != null ? semName : "Semester " + (position + 1));
@@ -294,13 +282,10 @@ public class StudentHomeActivity extends AppCompatActivity {
                 
                 // CGPA Formula: Sum of All Quality Points / Total Credit Hours (Sum of all attempted credits)
                 double cumGpa = totalCreds > 0 ? (totalPts / totalCreds) : 0;
-                if (cumHasSpecial) {
-                    tvCumGpa.setText("N/A");
-                    setupClassStandingChart(0.0);
-                } else {
-                    tvCumGpa.setText(String.format(java.util.Locale.US, "%.2f", cumGpa));
-                    setupClassStandingChart(cumGpa);
-                }
+                tvCumGpa.setText(cumHasSpecial ? "INC" : String.format(java.util.Locale.US, "%.2f", cumGpa));
+                
+                // We still want to use the numeric calculation for class standing pie chart
+                setupClassStandingChart(cumGpa, cumHasSpecial);
                 
                 com.google.firebase.Timestamp semTime = sem.getTimestamp("timestamp");
                 if (semTime != null && !predictionHistory.isEmpty()) {
@@ -331,27 +316,17 @@ public class StudentHomeActivity extends AppCompatActivity {
         rvSemesterSelector.scrollToPosition(semLabels.size() - 1);
     }
 
-    private boolean checkForSpecialStatuses(List<Map<String, Object>> modules) {
-        if (modules == null) return false;
-        for (Map<String, Object> m : modules) {
-            String grade = (String) m.get("grade");
-            if (grade != null && (grade.equals("MC") || grade.equals("AB") || grade.equals("NE") || grade.equals("WH") || grade.equals("INC"))) {
-                return true;
-            }
-        }
-        return false;
-    }
-
     private void calculateGpasAndPopulateUI(List<DocumentSnapshot> semesters) {
         double totalPoints = 0;
         double totalCredits = 0;
         double latestSemPoints = 0;
         double latestSemCredits = 0;
-        List<Map<String, Object>> latestResults = null;
-        List<Entry> gpaTrendEntries = new ArrayList<>();
         
         boolean cumHasSpecial = false;
         boolean latestSemHasSpecial = false;
+        
+        List<Map<String, Object>> latestResults = null;
+        List<Entry> gpaTrendEntries = new ArrayList<>();
         
         for (int i = 0; i < semesters.size(); i++) {
             DocumentSnapshot sem = semesters.get(i);
@@ -365,10 +340,17 @@ public class StudentHomeActivity extends AppCompatActivity {
             
             double semPts = 0;
             double semCreds = 0;
-            boolean thisSemSpecial = false;
+            boolean currentSemSpecial = false;
 
             for (Map<String, Object> mod : modules) {
                 String grade = (String) mod.get("grade");
+                if (grade != null && (grade.equals("MC") || grade.equals("AB") || grade.equals("NE") || grade.equals("WH") || grade.equals("INC"))) {
+                    cumHasSpecial = true;
+                    currentSemSpecial = true;
+                    if (isLatest) latestSemHasSpecial = true;
+                    continue;
+                }
+
                 double credits = 0;
                 Object credObj = mod.get("credits");
                 if (credObj instanceof Double) credits = (Double) credObj;
@@ -379,10 +361,6 @@ public class StudentHomeActivity extends AppCompatActivity {
                 if (ptObj instanceof Double) points = (Double) ptObj;
                 else if (ptObj instanceof Long) points = ((Long) ptObj).doubleValue();
 
-                if (grade != null && (grade.equals("MC") || grade.equals("AB") || grade.equals("NE") || grade.equals("WH") || grade.equals("INC"))) {
-                    thisSemSpecial = true;
-                    continue;
-                }
                 
                 double pc = points * credits;
                 totalPoints += pc;
@@ -391,16 +369,11 @@ public class StudentHomeActivity extends AppCompatActivity {
                 semCreds += credits;
             }
 
-            if (thisSemSpecial) {
-                cumHasSpecial = true;
-                if (isLatest) {
-                    latestSemHasSpecial = true;
-                }
-                gpaTrendEntries.add(new Entry(i, 0f));
-            } else {
-                double semGpa = semCreds > 0 ? (semPts / semCreds) : 0;
-                gpaTrendEntries.add(new Entry(i, (float) semGpa));
-            }
+            double semGpa = semCreds > 0 ? (semPts / semCreds) : 0;
+            
+            // For the trend chart, we can just use the calculated numeric GPA, or 0 if it's completely INC.
+            // Using semGpa is fine since we skipped the INC credits.
+            gpaTrendEntries.add(new Entry(i, (float) semGpa));
 
             if (isLatest) {
                 latestSemPoints = semPts;
@@ -413,19 +386,9 @@ public class StudentHomeActivity extends AppCompatActivity {
         // CGPA Formula: Sum of All Quality Points / Total Credit Hours
         double cumulativeGpa = totalCredits > 0 ? (totalPoints / totalCredits) : 0;
         
-        if (latestSemHasSpecial) {
-            tvSemGpa.setText("N/A");
-        } else {
-            tvSemGpa.setText(String.format(java.util.Locale.US, "%.2f", latestSemGpa));
-        }
-        
-        if (cumHasSpecial) {
-            tvCumGpa.setText("N/A");
-            setupClassStandingChart(0.0);
-        } else {
-            tvCumGpa.setText(String.format(java.util.Locale.US, "%.2f", cumulativeGpa));
-            setupClassStandingChart(cumulativeGpa);
-        }
+        tvSemGpa.setText(latestSemHasSpecial ? "INC" : String.format(java.util.Locale.US, "%.2f", latestSemGpa));
+        tvCumGpa.setText(cumHasSpecial ? "INC" : String.format(java.util.Locale.US, "%.2f", cumulativeGpa));
+        setupClassStandingChart(cumulativeGpa, cumHasSpecial);
         
         if (semesters.size() > 0) {
             DocumentSnapshot latest = semesters.get(semesters.size() - 1);
@@ -433,10 +396,7 @@ public class StudentHomeActivity extends AppCompatActivity {
             tvSemGpaSub.setText(semName != null ? semName : "Semester " + semesters.size());
             tvCumGpaSub.setText("Till " + (semName != null ? semName : "Semester " + semesters.size()));
         }
-        
-        // Initial visibility check for the latest results
-        boolean hasSpecial = checkForSpecialStatuses(latestResults);
-        tvSpecialStatusNote.setVisibility(hasSpecial ? View.VISIBLE : View.GONE);
+
         
         setupGpaTrendChart(gpaTrendEntries);
         setupPerformanceBarChart(latestResults);
@@ -597,7 +557,7 @@ public class StudentHomeActivity extends AppCompatActivity {
         }
     }
     
-    private void setupClassStandingChart(double cgpa) {
+    private void setupClassStandingChart(double cgpa, boolean isInc) {
         PieChart pieChart = findViewById(R.id.chartDegreeClass);
         pieChart.getDescription().setEnabled(false);
         pieChart.getLegend().setEnabled(false);
@@ -608,37 +568,48 @@ public class StudentHomeActivity extends AppCompatActivity {
         pieChart.setDrawEntryLabels(false);
 
         List<PieEntry> entries = new ArrayList<>();
-        entries.add(new PieEntry((float) cgpa, ""));
-        entries.add(new PieEntry((float) (4.0 - cgpa), ""));
-
-        PieDataSet dataSet = new PieDataSet(entries, "");
-        dataSet.setDrawValues(false);
-        
+        PieDataSet dataSet;
         int color;
         String className;
-        if (cgpa >= 3.70) {
-            color = Color.parseColor("#FFD700"); // 1st Class
-            className = "1st Class";
-        } else if (cgpa >= 3.30) {
-            color = Color.parseColor("#2DCC70"); // 2nd Upper
-            className = "2nd Upper";
-        } else if (cgpa >= 3.00) {
-            color = Color.parseColor("#057BFE"); // 2nd Lower
-            className = "2nd Lower";
-        } else if (cgpa >= 2.00) {
-            color = Color.parseColor("#F39C12"); // Ordinary Pass
-            className = "Ordinary Pass";
+
+        if (isInc) {
+            entries.add(new PieEntry(4.0f, ""));
+            dataSet = new PieDataSet(entries, "");
+            dataSet.setDrawValues(false);
+            
+            color = Color.parseColor("#BDBDBD"); // Gray for incomplete
+            className = "Incomplete";
+            dataSet.setColors(color);
         } else {
-            color = Color.parseColor("#E74C3C"); // Weak
-            className = "Weak";
+            entries.add(new PieEntry((float) cgpa, ""));
+            entries.add(new PieEntry((float) (4.0 - cgpa), ""));
+
+            dataSet = new PieDataSet(entries, "");
+            dataSet.setDrawValues(false);
+            
+            if (cgpa >= 3.70) {
+                color = Color.parseColor("#FFD700"); // 1st Class
+                className = "1st Class";
+            } else if (cgpa >= 3.30) {
+                color = Color.parseColor("#2DCC70"); // 2nd Upper
+                className = "2nd Upper";
+            } else if (cgpa >= 3.00) {
+                color = Color.parseColor("#057BFE"); // 2nd Lower
+                className = "2nd Lower";
+            } else if (cgpa >= 2.00) {
+                color = Color.parseColor("#F39C12"); // Ordinary Pass
+                className = "Ordinary Pass";
+            } else {
+                color = Color.parseColor("#E74C3C"); // Weak
+                className = "Weak";
+            }
+            dataSet.setColors(color, Color.parseColor("#E0E0E0"));
         }
         
         pieChart.setCenterText(className + "\nStanding");
         pieChart.setCenterTextSize(12f);
         pieChart.setCenterTextColor(color);
         pieChart.setCenterTextTypeface(android.graphics.Typeface.DEFAULT_BOLD);
-
-        dataSet.setColors(color, Color.parseColor("#E0E0E0"));
         
         PieData data = new PieData(dataSet);
         pieChart.setData(data);
@@ -710,14 +681,17 @@ public class StudentHomeActivity extends AppCompatActivity {
 
         // 2. Study Time
         tvStudyTitle.setText("Study Time: " + studyHours + "h/week");
-        if (studyHours >= 25) {
-            tvStudyDesc.setText("Great effort! Your hard work is pushing your prediction higher.");
+        Double targetStudy = currentPredictionDoc.getDouble("targetStudyHours");
+        double requiredStudy = (targetStudy != null && targetStudy > 0) ? targetStudy : 25.0; // Fallback to 25 if old data
+
+        if (studyHours >= requiredStudy) {
+            tvStudyDesc.setText("Great effort! You are fully meeting your SLQF study requirement.");
             llStudyBg.setBackgroundColor(colorGreen);
-        } else if (studyHours >= 15) {
-            tvStudyDesc.setText("Moderate effort. Increasing study time will directly improve your grade.");
+        } else if (studyHours >= requiredStudy * 0.6) { // 60% of target
+            tvStudyDesc.setText("Moderate effort. Meeting your full SLQF target will directly improve your grade.");
             llStudyBg.setBackgroundColor(colorYellow);
         } else {
-            tvStudyDesc.setText("Too low! The AI expects a GPA drop unless you dedicate more time.");
+            tvStudyDesc.setText("Too low! The AI expects a GPA drop unless you dedicate more time to self-study.");
             llStudyBg.setBackgroundColor(colorRed);
         }
 
