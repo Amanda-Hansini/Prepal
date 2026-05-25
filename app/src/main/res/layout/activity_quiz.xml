@@ -148,6 +148,20 @@
                     android:textStyle="bold"/>
             </LinearLayout>
 
+            <!-- Dynamic Content for Attendance List -->
+            <ScrollView
+                android:id="@+id/svDynamicContent"
+                android:layout_width="match_parent"
+                android:layout_height="250dp"
+                android:visibility="gone">
+                <LinearLayout
+                    android:id="@+id/llDynamicContent"
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    android:orientation="vertical"
+                    android:paddingTop="8dp"/>
+            </ScrollView>
+
         </LinearLayout>
     </androidx.cardview.widget.CardView>
 
