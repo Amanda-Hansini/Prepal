@@ -71,7 +71,18 @@
                 android:textSize="20sp"
                 android:textStyle="bold"
                 android:gravity="center"
-                android:layout_marginBottom="32dp"/>
+                android:layout_marginBottom="16dp"/>
+
+            <TextView
+                android:id="@+id/tvQuestionContext"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:text="Context goes here."
+                android:textColor="@color/textColorSecondary"
+                android:textSize="14sp"
+                android:gravity="center"
+                android:visibility="gone"
+                android:layout_marginBottom="24dp"/>
 
             <!-- Input for Numeric Answers (Hours, etc.) -->
             <EditText
@@ -107,17 +118,19 @@
                     android:orientation="horizontal"
                     android:layout_marginTop="8dp">
                     <TextView
+                        android:id="@+id/tvLabelStart"
                         android:layout_width="0dp"
                         android:layout_height="wrap_content"
                         android:layout_weight="1"
-                        android:text="Very Low"
+                        android:text="Never"
                         android:textSize="12sp"
                         android:textColor="@color/textColorSecondary"/>
                     <TextView
+                        android:id="@+id/tvLabelEnd"
                         android:layout_width="0dp"
                         android:layout_height="wrap_content"
                         android:layout_weight="1"
-                        android:text="Very High"
+                        android:text="Very Often"
                         android:textSize="12sp"
                         android:textColor="@color/textColorSecondary"
                         android:gravity="end"/>

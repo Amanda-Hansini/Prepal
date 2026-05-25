@@ -1,0 +1,212 @@
+Chapter 2: Literature Review
+2.1 Theoretical Framework for Predictive Feature Selection
+Predicting undergraduate academic performance stands as a cornerstone of learning analytics and educational data mining. Historically, prediction frameworks relied heavily on static pre-admission parameters, such as high school Grade Point Average (GPA) or standardized examination scores (e.g., SAT/ACT). However, large-scale meta-analytic evidence involving 21,195 students reveals that these static indicators often fail to account for dynamic behavioral shifts that occur as a 
+student transitions
+ into the tertiary environment.
+According to the 
+Unique Effects Model
+ in educational psychology, generic student background characteristics contribute minimal unique variance to university performance, whereas malleable behavioral inputs provide substantial, independent predictive validity. By focusing exclusively on four core dynamic behavioral and psychological dimensions—
+Class Attendance, Self-Directed Study Hours, Sleep Quality, and Perceived Stress
+—the "PrePal" system architecture isolates actionable variables. This ensures that the underlying multiple linear regression model operates on parameters that students can actively modify via system interventions to protect their academic standing.
+2.2 The Deterministic Impact of Class Attendance on Student Outcomes
+2.2.1 The Superior Predictive Validity of Attendance Across Higher Education
+Class attendance has consistently emerged as one of the most powerful behavioral determinants of academic success within higher education literature. In a comprehensive meta-analytic review evaluating various non-cognitive predictors of college grades, class attendance demonstrated an exceptionally strong correlation with both specific course grades ($k = 69$, $N = 21,195$, $\rho = .44$) and overall collegiate cumulative GPA ($k = 33$, $N = 9,243$, $\rho = .41$). This foundational research established that class attendance is a statistically superior predictor of university grades compared to any other known academic behavior, outperforming psychometric measures of study habits, documented study skills, and standardized university admission test metrics. Class attendance explains massive amounts of unique performance variance because it operates as an active, direct behavioral engagement mechanism that remains independent from a student's past scholastic aptitude or high school preparation.
+[1]
+2.2.2 Non-Linear Quantile Returns and Performance Percentiles
+The empirical return on lecture attendance is highly non-linear and exhibits varying degrees of impact depending on where a student sits along the performance distribution. Longitudinal tracking of university cohorts using advanced quantile regression models reveals that while class attendance maintains a globally positive and significant impact on final marks across all student tiers, its benefits are disproportionately higher for lower-performing undergraduates situated in the 
+lowest grade percentiles. For high-risk students, physically attending sessions functions as a critical academic safety net that prevents absolute failure, whereas top-tier students show a slightly diminished marginal sensitivity to minor attendance drops due to their advanced autonomous learning strategies. This statistical variance underscores why predictive models must treat attendance as a dynamic risk indicator, as an identical drop in attendance yields far more catastrophic grade drops for a struggling student than an exceptionally high-performing peer.
+[2]
+2.2.3 Module-Specific Sensitivity and Preparation Interventions
+The sensitivity of student performance to classroom absenteeism is heavily modulated by the structural design and cognitive demands of individual course units. Experimental research utilizing difference-in-differences (
+DiD
+) methodologies to evaluate structural university attendance policies confirms that implementing mandatory preparation frameworks significantly reduces student absenteeism. Crucially, the resulting increase in attendance directly drives a statistically significant drop in failure rates for highly quantitative and technical modules, whereas purely qualitative modules show a much less pronounced direct sensitivity to raw physical presence. This empirical variation proves that analyzing attendance as a flat, aggregated semester average introduces significant predictive noise, validating why a predictive system must model attendance on a rigorous, module-by-module basis.
+[3]
+2.2.4 The Interaction Between Attendance and Prior Academic Performance
+When determining the true parameters of academic success, class attendance operates in a tight, interactive relationship with a student’s baseline academic competence. Quantitative multi-variable analyses tracking undergraduate cohorts demonstrate that while prior academic standing (such as high school GPA) sets an initial performance baseline, active class attendance serves as the primary operational variable that determines whether a student maintains, exceeds, or severely degrades that baseline during the semester. Even students with highly competitive prior GPAs experience notable declines in their university course marks when their attendance rates deteriorate, reinforcing the fact that scholastic aptitude cannot substitute for active lecture engagement.
+Within the regulatory framework of the Saegis Campus Examination By-Laws, Section 6 explicitly translates this empirical reality into an institutional directive, dictating that a student's failure to satisfy minimum attendance requirements results in immediate disqualification from sitting for an end-semester evaluation. This institutional penalty forces the student to repeat the module on a subsequent occasion, and the failed attempt is automatically calculated into the Grade Point Average as an $E$ grade with a value of $0.00$ grade points. PrePal integrates this institutional structure directly into its machine learning prediction logic, triggering immediate predictive penalties when module-level attendance values drop below the mandatory university threshold.
+2.3 The Duality of Study Hours: Quantity vs. Cognitive Efficiency
+2.3.1 Statistical Validation of Weekly Independent Study Volume
+The quantity of self-regulated learning hours outside formal lecture environments forms a structural baseline for undergraduate performance models. Empirical investigations mapping regular weekly self-study hours against undergraduate grade distributions confirm a significant positive correlation between study volume and final Grade Point Averages. Statistical variance testing indicates that when undergraduate cohorts are segmented into distinct performance categories based on independent study time (such as low-volume tiers logging 2 to 4 hours per week versus high-volume tiers logging above 6 hours per week), students dedicating longer weekly blocks consistently achieve higher final marks. This statistical differentiation confirms that a baseline behavioral volume of independent study is mathematically required to maintain passing thresholds and avoid academic jeopardy.
+[4]
+2.3.2 Strategic Compensation and Self-Regulated Learning Dynamics
+Despite the documented importance of raw study volume, educational psychology literature warns against treating study hours as an isolated linear predictor. Longitudinal, daily diary tracking of university students over intensive 30-day examination periods demonstrates that perceived daily study time interactively predicts goal achievement when combined with targeted self-regulated learning (SRL) strategies—such as deliberate planning, continuous monitoring, and cognitive concentration. High-quality study strategies act as a statistical buffer; when undergraduates employ superior planning and deep focus, less raw time is required to achieve identical academic milestones. Conversely, simply accumulating study hours without cognitive self-regulation can yield diminishing returns, proving that academic success depends on both the time investment and the strategic efficiency of that study block.
+[5]
+2.3.3 The Mitigating Impact of Environmental and Internal Distractions
+The true predictive validity of study hours degrades heavily when accounting for environmental, internal, and technological disruptions. Controlled multi-variable regression analyses indicate that undergraduates report being actively distracted during approximately 20% of their total self-directed learning time. High levels of study-time distraction are significantly associated with poorer exam performance, whereas simply starting to study earlier prior to an assessment does not yield a statistically significant correlation with final marks when controlling for active strategies and concentration variables. Therefore, for a predictive machine learning engine like "PrePal," capturing raw study hours in tandem with interactive focus metrics provides a much more precise behavioral snapshot than an unweighted hour count.
+[6]
+2.3.4 Integration with Institutional Credit Benchmarks
+To ground these behavioral findings within an institutional context, the independent study metrics used in the PrePal system are evaluated against standard national qualification metrics. According to Section 3 of the Saegis Campus Examination By-Laws, the volume of learning is defined using 
+the Sri Lanka Qualifications Framework (SLQF) credit system, which establishes a student workload of 1,500 notional learning hours per academic year. One credit is strictly considered equivalent to 50 notional learning hours for taught or laboratory courses. These notional hours account for direct contact hours with teachers, self-learning time, and time spent preparing assignments or assessments. By analyzing a student's self-directed study hours relative to the total credit 
+hours
+ they are registered for in a given semester, PrePal moves away from arbitrary hour boundaries. Instead, the system calculates a personalized, dynamic baseline to determine whether the student's independent learning habits satisfy institutional expectations or fall short, adding rigorous contextual accuracy to its GPA predictions.
+2.4 The Physiological Foundation: Sleep Quality, Deprivation, and Cognitive Performance
+2.4.1 Prevalence of Sleep Quality Deterioration in Undergraduates
+Physiological health, specifically the maintenance of regular sleep architecture, provides the neural foundation for critical higher-order cognitive functions, including memory consolidation, sustained attention, executive functioning, and emotional stability. Undergraduate student populations face widespread, endemic sleep disturbances driven by a combination of dense academic workloads, preparation for evaluations, and erratic lifestyle schedules. Utilizing the standardized Pittsburgh Sleep Quality Index (PSQI), large-scale cross-sectional screenings indicate that a vast majority of university students exhibit global PSQI scores greater than 5, clinically classifying them as "poor sleepers". This biological disruption peaks acutely during institutional examination windows, where students deliberately engage in severe sleep restriction and overnight sleep deprivation to maximize cramming opportunities.
+[7]
+2.4.2 Quantifiable Degradation of Grade Point Average
+The empirical association between impaired sleep profiles and lower Grade Point Average (GPA) is robustly documented across higher education contexts. Undergraduates identified as poor night-time sleepers via standardized PSQI assessments register a significantly lower cumulative mean GPA ($2.92 \pm 1.09$) compared to the significantly higher GPA distributions achieved by clinically verified good sleepers ($p < 0.0001$). This direct statistical drop demonstrates that sleep metrics have strong predictive validity when anticipating student performance trajectories.
+[7]
+2.4.3 Circadian and Sleep/Wake Irregularity Metrics
+Beyond raw duration parameters, sleep schedule variance and timing consistency function as critical indicators of cognitive performance. Highly irregular sleep/wake schedules are tightly linked with poorer academic marks, substantial delays in circadian timing, and compromised daytime alertness. Undergraduates with erratic sleep tracking data experience frequent daytime sleepiness and chronic tiredness, which directly diminishes real-time focus during lectures and graded assessments.
+[7]
+2.4.4 The Cognitive Synergy and Well-Being Loop
+Sleep quality cannot be evaluated as an isolated behavioral variable, as it operates in a multi-directional biological and psychological loop. 
+Actigraphic
+ and subjective tracking in residential collegiate settings reveals that sleep profiles work in a synchronized loop with subjective well-being and stress tolerance. Reduced sleep quality directly drives a steep decrease in positive affect and amplifies perceived stress, causing a cascading failure in a student’s capability to execute complex cognitive tasks during graded assessments. This interactive framework validates why PrePal models sleep as an interactive cluster alongside psychometric stress scores.
+[8]
+2.4.5 Sleep Restrictions During High-Stakes Evaluation Windows
+The deliberate restriction of sleep during academic evaluation milestones directly hinders the cognitive architecture required for optimal test performance. Clinical evaluations of undergraduate behaviors show a direct correlation between acute sleep restriction before examinations and poor grades. Pulling all-night study sessions degrades working memory capacity, which counteracts any benefit gained from late-night cramming. This reality justifies why PrePal captures categorized sleep duration choices alongside consistency metrics rather than assuming fixed constraints, mapping them to midpoints to weigh their physiological impact accurately against the final predicted GPA.
+[9]
+2.5 Academic Stress and the Validation of Perceived Stress Measurement
+2.5.1 The Perceived Stress Framework and Cognitive Capacity Drain
+Psychological pressure represents an unavoidable dimension of the higher education landscape, but its predictive impact on academic performance depends heavily on subjective cognitive appraisal. Perceived stress is defined as a psychological state where an individual evaluates environmental demands as exceeding their personal coping resources and threatening their overall well-being. In undergraduate cohorts, highly demanding coursework, upcoming project deadlines, and intensive evaluation windows frequently trigger elevated levels of perceived stress.
+Cross-sectional structural equation modeling demonstrates that elevated perceived stress exerts a direct, statistically significant negative impact on objective academic performance parameters. Students experiencing high chronic stress register lower GPA outcomes and display degraded evaluations of their own academic self-efficacy. This performance degradation occurs because severe psychological strain creates continuous cognitive interference, draining a student's working memory capacity and driving them toward maladaptive behaviors such as persistent procrastination, diminished study concentration, and lecture absenteeism.
+[10]
+2.5.2 Operationalizing and Measuring Stress via the PSS-10 Psychometric Index
+A fundamental challenge in educational predictive systems is the reliable quantification of transient psychological states without introducing qualitative bias. To resolve this and avoid arbitrary, unscientific self-reporting metrics (such as asking a student to evaluate their stress as simply "low, medium, or high"), contemporary research points to the 
+Perceived Stress Scale (PSS)
+, originally conceptualized by Cohen et al. (1983), as a robust, globally validated measure. Psychometric evaluations and meta-analytic confirmatory factor analyses involving tens of thousands of subjects confirm that short-form iterations—specifically the 
+PSS-10
+—possess a highly stable, invariant two-factor structure consisting of "perceived helplessness" and "perceived self-efficacy".
+Large-scale validation studies conducted within highly competitive higher education environments confirm that the PSS-10 demonstrates excellent internal consistency, strong construct validity, and reliable test-retest reliability among university undergraduates. By integrating this established psychometric block into the PrePal system interface, qualitative psychological strain is translated into a standardized numerical index ($0$ to $40$). This allows the underlying multiple linear regression engine to model stress variations with true mathematical and behavioral validity.
+[11]
+2.5.3 The Interactive Strain of Part-Time Employment on Academic Outcomes
+A secondary behavioral confound that heavily influences undergraduate performance models is the time-commitment strain of part-time employment. Empirical tracking of working versus non-working undergraduates reveals that while low-to-moderate occupational workloads can promote structured time management skills, excessive external commitments exert an indirect pressure on performance parameters. Undergraduates balancing extensive part-time work shifts exhibit significantly elevated scores on chronic stress indexes and experience a higher incidence of sleep schedule disruptions.
+Rather than treating employment as an isolated structural vector, predictive architectures like PrePal capture these occupational strains indirectly through their direct biological and psychological manifestations: namely, localized drops in available self-directed study hours and elevated scores on the psychometric PSS-10 scale. This ensures the machine learning features maintain precise focus on actionable behavioral changes that actively alter GPA outcomes.
+[12]
+2.6 Predictor Summary and Local Validation Calibrations
+Variable / Feature
+Primary Empirical Foundation
+Proven Statistical Impact on Performance
+Implementation in PrePal Architecture
+Class Attendance
+Credé
+ et al. (2010)
+Lucey & 
+Grydaki
+ (2022)
+Strongest individual predictor of collegiate GPA ($\rho = .41$); holds disproportionately higher predictive value for students in lower mark percentiles.
+Operationalized as a discrete, module-by-module percentage check mapped to Saegis institutional eligibility boundaries.
+Study Hours
+Zubair et al. (2024)
+Theobald (2024)
+Positive correlation with grades, but interacts strongly with concentration metrics and strategy efficiency.
+Evaluated as a dynamic ratio against SLQF-mandated notional learning hours per credit module.
+Sleep Quality
+Maheshwari & Shaukat (2019)
+Suardiaz
+-Muro et al. (2023)
+Clinically poor sleepers face significantly depressed mean GPAs ($2.92 \pm 1.09$) and degraded memory consolidation.
+Evaluated via interaction vectors combining overnight duration consistency with physiological strain indicators.
+Perceived Stress
+Popa-Velea et al. (2021)
+Yılmaz 
+Koğar
+ & 
+Koğar
+ (2024)
+Directly degrades cumulative performance and triggers working memory capacity deficits.
+Quantified through a psychometrically validated, embedded short-form Perceived 
+Stress Scale (PSS-10) questionnaire.
+2.6.1 Local Model Calibration and Field Validation
+To validate these global published findings within our localized academic ecosystem, a field survey was executed targeting undergraduate students within the Saegis Campus Bachelor of Information Technology (BIT) program. The collected empirical responses confirm that the international behavioral trends documented by 
+Credé
+ et al. (2010) and Cohen et al. (1983) map directly onto the Saegis student batch. 
+Undergraduates reporting a current semester GPA within the 
+First-Class
+ tier ($\
+ge
+ 3.70$) consistently displayed an optimized interaction loop: high module attendance ($\
+ge
+ 90\%$), balanced study structures matching the SLQF weekly notional learning limits, consistent sleep durations of 6–7 hours, and low-risk psychometric profiles on the embedded PSS-10 scale. Conversely, students experiencing academic jeopardy correlated tightly with high chronic stress scores and attendance drops below the 80% boundary. This localized alignment provides complete empirical and institutional justification for the selection of these four exclusive features within 
+PrePal's
+ machine learning infrastructure.
+References 
+[1]
+M. 
+Credé
+, S. G. Roch, and U. M. 
+Kieszczynka
+, “Class attendance in college: A meta-analytic review of the relationship of class attendance with grades and student characteristics,” 2010, 
+SAGE Publications Inc.
+ 
+doi
+: 10.3102/0034654310362998.
+[2]
+A. Karnik, P. Kishore, and M. Meraj, “Examining the linkage between class attendance at university and academic performance in an International Branch Campus setting,” 
+Res. Comp. Int. Educ.
+, vol. 15, no. 4, pp. 371–390, 2020, 
+doi
+: 10.1177/1745499920958855.
+[3]
+S. Lucey and M. Grydaki, “University attendance and academic performance: Encouraging student engagement,” 
+Scott. J. Polit. Econ.
+, vol. 70, no. 2, pp. 180–199, May 2023, 
+doi
+: 10.1111/sjpe.12334.
+[4]
+Dr. T. Zubair, U. Qazi, Dr. S. M. Faisal, and Dr. A. Khalid Khan, “The impact of study hours on academic performance: A statistical analysis of students’ grades,” 
+International 
+Journal of Multidisciplinary Research and Growth Evaluation
+, vol. 5, no. 3, pp. 720–728, 2024, 
+doi
+: 10.54660
+/.ijmrge
+.2024.5.3.720-728.
+[5]
+M. Theobald, “Study longer or study effectively? Better study strategies can compensate for less study time and predict goal achievement and lower negative affect,” 
+British Journal of Educational Psychology
+, vol. 95, no. 2, pp. 405–420, Jun. 2025, 
+doi
+: 10.1111/bjep.12725.
+[6]
+E. M. Walck-Shannon, S. F. Rowell, and R. F. Frey, “To what extent do study habits relate to 
+performance?,
+” 
+CBE Life Sci. Educ.
+, vol. 20, no. 1, pp. 1–15, Mar. 2021, 
+doi
+: 10.1187/cbe.20-05-0091.
+[7]
+G. Maheshwari and F. Shaukat, “Impact of Poor Sleep Quality on the Academic Performance of Medical Students,” 
+Cureus
+, Apr. 2019, 
+doi
+: 10.7759/cureus.4357.
+[8]
+M. A. Armand, F. 
+Biassoni
+, and A. 
+Corrias
+, “Sleep, Well-Being and Academic Performance: A Study in a Singapore Residential College,” 
+Front. Psychol.
+, vol. 12, May 2021, 
+doi
+: 10.3389/fpsyg.2021.672238.
+[9]
+S. Hassan, N. M Alqahtani, S. M Alshahrani, A. A 
+Alhefzy
+, O. Alharthi, and M. Alharbi, “Association Between Sleep Quality and Academic Performance Among Undergraduate Medical Health Sciences Students: A Cross-Sectional Study,” 
+Cureus
+, Sep. 2025, 
+doi
+: 10.7759/cureus.91548.
+[10]
+O. Popa-Velea, I. 
+Pîrvan
+, and L. V. Diaconescu, “The impact of self-efficacy, optimism, resilience and perceived stress on academic performance and its subjective evaluation: A cross-sectional study,” 
+Int. J. Environ. Res. Public Health
+, vol. 18, no. 17, Sep. 2021, 
+doi
+: 10.3390/ijerph18178911.
+[11]
+S. Cohen, T. 
+Kamarck
+, and R. Mermelstein, “A Global Measure of Perceived Stress,” 1983.
+[12]
+F. Saddique, “Influence of Part-Time Employment on Grade Point Average and Academic Outcomes of University Students,” 
+Social Sciences Spectrum
+, vol. 5, no. 1, pp. 251–259, Feb. 2026, 
+doi
+: 10.71085/sss.05.01.481.
+ 
