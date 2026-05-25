@@ -37,8 +37,8 @@ public class QuizActivity extends AppCompatActivity {
     private TextView tvQuestionCount, tvQuestionText, tvQuestionContext, tvRatingValue, tvLabelStart, tvLabelEnd;
     private ProgressBar quizProgress;
     private EditText etQuizInput;
-    private LinearLayout llRatingContainer, llDynamicContent;
-    private ScrollView svDynamicContent;
+    private LinearLayout llRatingContainer, llAttendance, llPss;
+    private ScrollView svAttendance, svPss;
     private SeekBar seekBarRating;
     private AppCompatButton btnPrev, btnNext;
 
@@ -49,17 +49,28 @@ public class QuizActivity extends AppCompatActivity {
 
     private List<String> questions = new ArrayList<>();
     private List<String> contexts = new ArrayList<>();
-    private List<Boolean> isRatingQuestion = new ArrayList<>();
-    private List<Double> answers = new ArrayList<>();
-    
-    // Custom enum-like list for question types: 0=Dynamic List (Attendance), 1=Numeric, 2=Rating
+    // questionTypes: 0=Dynamic Attendance, 1=Numeric, 2=Rating (not used anymore), 3=Dynamic PSS
     private List<Integer> questionTypes = new ArrayList<>();
+    private List<Double> answers = new ArrayList<>();
     
     private List<String> moduleNamesForAttendance = new ArrayList<>();
     private List<String> moduleDisplayNamesForAttendance = new ArrayList<>();
     private Map<String, Double> moduleAttendances = new HashMap<>();
     private List<Spinner> attendanceSpinners = new ArrayList<>();
     
+    private String[] pssQuestions = {
+        "1. In the last month, how often have you been upset because of something that happened unexpectedly?",
+        "2. In the last month, how often have you felt that you were unable to control the important things in your life?",
+        "3. In the last month, how often have you felt nervous and \"stressed\"?",
+        "4. In the last month, how often have you felt confident about your ability to handle your personal problems?",
+        "5. In the last month, how often have you felt that things were going your way?",
+        "6. In the last month, how often have you found that you could not cope with all the things that you had to do?",
+        "7. In the last month, how often have you been able to control irritations in your life?",
+        "8. In the last month, how often have you felt that you were on top of things?",
+        "9. In the last month, how often have you been angered because of things that were outside of your control?",
+        "10. In the last month, how often have you felt difficulties were piling up so high that you could not overcome them?"
+    };
+    private List<Spinner> pssSpinners = new ArrayList<>();
     private int pssTotalScore = 0;
 
     @Override
@@ -135,26 +146,11 @@ public class QuizActivity extends AppCompatActivity {
         questionTypes.add(1);
         answers.add(0.0);
         
-        // Steps 4-13: PSS-10
-        String[] pssQuestions = {
-            "1. In the last month, how often have you been upset because of something that happened unexpectedly?",
-            "2. In the last month, how often have you felt that you were unable to control the important things in your life?",
-            "3. In the last month, how often have you felt nervous and \"stressed\"?",
-            "4. In the last month, how often have you felt confident about your ability to handle your personal problems?",
-            "5. In the last month, how often have you felt that things were going your way?",
-            "6. In the last month, how often have you found that you could not cope with all the things that you had to do?",
-            "7. In the last month, how often have you been able to control irritations in your life?",
-            "8. In the last month, how often have you felt that you were on top of things?",
-            "9. In the last month, how often have you been angered because of things that were outside of your control?",
-            "10. In the last month, how often have you felt difficulties were piling up so high that you could not overcome them?"
-        };
-        
-        for (String q : pssQuestions) {
-            questions.add(q);
-            contexts.add("Perceived Stress Scale (PSS-10). Answer based on your feelings in the last month.");
-            questionTypes.add(2);
-            answers.add(0.0);
-        }
+        // Step 4: PSS-10 (Dynamic List)
+        questions.add("Perceived Stress Scale (PSS-10)");
+        contexts.add("Please answer the following questions based on your feelings in the last month.");
+        questionTypes.add(3);
+        answers.add(0.0);
     }
 
     private void initViews() {
@@ -168,17 +164,20 @@ public class QuizActivity extends AppCompatActivity {
         etQuizInput = findViewById(R.id.etQuizInput);
         llRatingContainer = findViewById(R.id.llRatingContainer);
         seekBarRating = findViewById(R.id.seekBarRating);
-        svDynamicContent = findViewById(R.id.svDynamicContent);
-        llDynamicContent = findViewById(R.id.llDynamicContent);
+        svAttendance = findViewById(R.id.svAttendance);
+        llAttendance = findViewById(R.id.llAttendance);
+        svPss = findViewById(R.id.svPss);
+        llPss = findViewById(R.id.llPss);
         btnPrev = findViewById(R.id.btnPrev);
         btnNext = findViewById(R.id.btnNext);
         
         quizProgress.setMax(questions.size());
         populateDynamicAttendanceList();
+        populateDynamicPssList();
     }
 
     private void populateDynamicAttendanceList() {
-        llDynamicContent.removeAllViews();
+        llAttendance.removeAllViews();
         attendanceSpinners.clear();
         LayoutInflater inflater = LayoutInflater.from(this);
         
@@ -186,7 +185,7 @@ public class QuizActivity extends AppCompatActivity {
         ArrayAdapter<String> adapter = new ArrayAdapter<>(this, android.R.layout.simple_spinner_dropdown_item, attendanceOptions);
 
         for (String displayName : moduleDisplayNamesForAttendance) {
-            View itemView = inflater.inflate(R.layout.item_module_attendance, llDynamicContent, false);
+            View itemView = inflater.inflate(R.layout.item_module_attendance, llAttendance, false);
             TextView tvModuleName = itemView.findViewById(R.id.tvModuleName);
             Spinner spinnerAttendance = itemView.findViewById(R.id.spinnerAttendance);
             
@@ -194,7 +193,28 @@ public class QuizActivity extends AppCompatActivity {
             spinnerAttendance.setAdapter(adapter);
             
             attendanceSpinners.add(spinnerAttendance);
-            llDynamicContent.addView(itemView);
+            llAttendance.addView(itemView);
+        }
+    }
+
+    private void populateDynamicPssList() {
+        llPss.removeAllViews();
+        pssSpinners.clear();
+        LayoutInflater inflater = LayoutInflater.from(this);
+        
+        String[] pssOptions = {"Never (0)", "Almost Never (1)", "Sometimes (2)", "Fairly Often (3)", "Very Often (4)"};
+        ArrayAdapter<String> adapter = new ArrayAdapter<>(this, android.R.layout.simple_spinner_dropdown_item, pssOptions);
+
+        for (String pssQuestion : pssQuestions) {
+            View itemView = inflater.inflate(R.layout.item_pss_question, llPss, false);
+            TextView tvPssQuestion = itemView.findViewById(R.id.tvPssQuestion);
+            Spinner spinnerPss = itemView.findViewById(R.id.spinnerPss);
+            
+            tvPssQuestion.setText(pssQuestion);
+            spinnerPss.setAdapter(adapter);
+            
+            pssSpinners.add(spinnerPss);
+            llPss.addView(itemView);
         }
     }
 
@@ -216,28 +236,6 @@ public class QuizActivity extends AppCompatActivity {
                 updateQuestion();
             }
         });
-
-        seekBarRating.setOnSeekBarChangeListener(new SeekBar.OnSeekBarChangeListener() {
-            @Override
-            public void onProgressChanged(SeekBar seekBar, int progress, boolean fromUser) {
-                tvRatingValue.setText(getPssLabel(progress));
-            }
-            @Override
-            public void onStartTrackingTouch(SeekBar seekBar) {}
-            @Override
-            public void onStopTrackingTouch(SeekBar seekBar) {}
-        });
-    }
-
-    private String getPssLabel(int progress) {
-        switch (progress) {
-            case 0: return "Never (0)";
-            case 1: return "Almost Never (1)";
-            case 2: return "Sometimes (2)";
-            case 3: return "Fairly Often (3)";
-            case 4: return "Very Often (4)";
-            default: return "";
-        }
     }
 
     private void updateQuestion() {
@@ -259,22 +257,20 @@ public class QuizActivity extends AppCompatActivity {
             // Dynamic List (Attendance)
             etQuizInput.setVisibility(View.GONE);
             llRatingContainer.setVisibility(View.GONE);
-            svDynamicContent.setVisibility(View.VISIBLE);
-        } else if (type == 2) {
-            // Rating
+            svPss.setVisibility(View.GONE);
+            svAttendance.setVisibility(View.VISIBLE);
+        } else if (type == 3) {
+            // Dynamic List (PSS-10)
             etQuizInput.setVisibility(View.GONE);
-            llRatingContainer.setVisibility(View.VISIBLE);
-            svDynamicContent.setVisibility(View.GONE);
-            seekBarRating.setMax(4);
-            seekBarRating.setProgress(answers.get(currentQuestionIndex).intValue());
-            tvRatingValue.setText(getPssLabel(seekBarRating.getProgress()));
-            tvLabelStart.setText("Never");
-            tvLabelEnd.setText("Very Often");
+            llRatingContainer.setVisibility(View.GONE);
+            svAttendance.setVisibility(View.GONE);
+            svPss.setVisibility(View.VISIBLE);
         } else {
-            // Numeric Input
+            // Numeric Input (Study Hours, Sleep Hours)
             etQuizInput.setVisibility(View.VISIBLE);
             llRatingContainer.setVisibility(View.GONE);
-            svDynamicContent.setVisibility(View.GONE);
+            svAttendance.setVisibility(View.GONE);
+            svPss.setVisibility(View.GONE);
             double ans = answers.get(currentQuestionIndex);
             etQuizInput.setText(ans > 0 ? String.valueOf(ans) : "");
             etQuizInput.requestFocus();
@@ -285,10 +281,6 @@ public class QuizActivity extends AppCompatActivity {
     }
 
     private double mapDropdownToPercentage(int position) {
-        // "90% - 100%" -> 95.0
-        // "80% - 89%" -> 85.0
-        // "70% - 79%" -> 75.0
-        // "Below 70%" -> 65.0
         switch (position) {
             case 0: return 95.0;
             case 1: return 85.0;
@@ -302,13 +294,13 @@ public class QuizActivity extends AppCompatActivity {
         try {
             int type = questionTypes.get(currentQuestionIndex);
             if (type == 0) {
-                // Save from Spinners into map
+                // Save from Attendance Spinners into map
                 for (int i = 0; i < moduleNamesForAttendance.size(); i++) {
                     double pct = mapDropdownToPercentage(attendanceSpinners.get(i).getSelectedItemPosition());
                     moduleAttendances.put(moduleNamesForAttendance.get(i), pct);
                 }
-            } else if (type == 2) {
-                answers.set(currentQuestionIndex, (double) seekBarRating.getProgress());
+            } else if (type == 3) {
+                // Save from PSS Spinners is done directly during submitResults
             } else {
                 String input = etQuizInput.getText().toString().trim();
                 if (input.isEmpty()) {
@@ -342,15 +334,13 @@ public class QuizActivity extends AppCompatActivity {
         double studyHours = answers.get(1);
         double sleepHours = answers.get(2);
         
-        // PSS-10 start index is 3
-        int pssStartIndex = 3;
-
         // Calculate PSS-10 Score
         pssTotalScore = 0;
-        for (int i = pssStartIndex; i < pssStartIndex + 10; i++) {
-            int score = answers.get(i).intValue();
-            int pssRelativeIndex = i - pssStartIndex;
-            if (pssRelativeIndex == 3 || pssRelativeIndex == 4 || pssRelativeIndex == 6 || pssRelativeIndex == 7) {
+        for (int i = 0; i < pssSpinners.size(); i++) {
+            int score = pssSpinners.get(i).getSelectedItemPosition(); // 0-4 mapping is direct!
+            
+            // Reverse score for questions 4, 5, 7, 8 (array index 3, 4, 6, 7)
+            if (i == 3 || i == 4 || i == 6 || i == 7) {
                 score = 4 - score;
             }
             pssTotalScore += score;

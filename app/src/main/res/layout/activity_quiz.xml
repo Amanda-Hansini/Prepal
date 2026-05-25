@@ -150,12 +150,26 @@
 
             <!-- Dynamic Content for Attendance List -->
             <ScrollView
-                android:id="@+id/svDynamicContent"
+                android:id="@+id/svAttendance"
                 android:layout_width="match_parent"
                 android:layout_height="250dp"
                 android:visibility="gone">
                 <LinearLayout
-                    android:id="@+id/llDynamicContent"
+                    android:id="@+id/llAttendance"
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    android:orientation="vertical"
+                    android:paddingTop="8dp"/>
+            </ScrollView>
+
+            <!-- Dynamic Content for PSS-10 List -->
+            <ScrollView
+                android:id="@+id/svPss"
+                android:layout_width="match_parent"
+                android:layout_height="250dp"
+                android:visibility="gone">
+                <LinearLayout
+                    android:id="@+id/llPss"
                     android:layout_width="match_parent"
                     android:layout_height="wrap_content"
                     android:orientation="vertical"
