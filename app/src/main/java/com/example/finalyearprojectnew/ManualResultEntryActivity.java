@@ -302,36 +302,48 @@ public class ManualResultEntryActivity extends AppCompatActivity {
         }
 
         String degId = degreeList.get(degPos - 1).id;
-        String batchId = batchList.get(batchPos - 1).id;
-        String prefix = batchId + "_" + degId + "_";
+        String batchDocId = batchList.get(batchPos - 1).id;
 
-        db.collectionGroup("Module IDs").get()
-                .addOnSuccessListener(queryDocumentSnapshots -> {
-                    semesterList.clear();
-                    List<String> displayNames = new ArrayList<>();
-                    displayNames.add("Select Semester");
+        db.collection("Batches").document(batchDocId).get()
+                .addOnSuccessListener(batchDoc -> {
+                    String realBatchId = batchDoc.getString("batchId");
+                    if (realBatchId == null) realBatchId = batchDocId;
+
+                    final String finalRealBatchId = realBatchId;
                     
-                    java.util.Set<String> uniqueFullIds = new java.util.TreeSet<>();
-                    for (QueryDocumentSnapshot doc : queryDocumentSnapshots) {
-                        // The parent of Module IDs collection is the document we want
-                        com.google.firebase.firestore.DocumentReference parentDoc = doc.getReference().getParent().getParent();
-                        if (parentDoc != null) {
-                            String fullId = parentDoc.getId();
-                            if (fullId.startsWith(prefix)) {
-                                uniqueFullIds.add(fullId);
-                            }
-                        }
-                    }
-                    
-                    for (String fullId : uniqueFullIds) {
-                        String semName = fullId.substring(prefix.length());
-                        semesterList.add(new SemesterInfo(fullId, semName));
-                        displayNames.add(semName);
-                    }
-                    updateSemesterSpinner(displayNames);
+                    db.collection("Degrees").document(degId).collection("Semesters").get()
+                            .addOnSuccessListener(queryDocumentSnapshots -> {
+                                semesterList.clear();
+                                List<String> displayNames = new ArrayList<>();
+                                displayNames.add("Select Semester");
+                                
+                                for (QueryDocumentSnapshot doc : queryDocumentSnapshots) {
+                                    String bId = doc.getString("batchId");
+                                    String sId = doc.getString("semesterId");
+                                    String semName = doc.getString("name");
+                                    
+                                    if (semName == null) {
+                                       String ay = doc.getString("academicYear");
+                                       String sn = doc.getString("semesterNo");
+                                       semName = (ay != null ? ay : "") + " " + (sn != null ? sn : "");
+                                    }
+
+                                    if (sId != null && bId != null) {
+                                        if (bId.equalsIgnoreCase(finalRealBatchId) || bId.equalsIgnoreCase(batchDocId)) {
+                                            String fullId = batchDocId + "_" + degId + "_" + sId;
+                                            semesterList.add(new SemesterInfo(fullId, semName.trim().isEmpty() ? sId : semName));
+                                            displayNames.add(semName.trim().isEmpty() ? sId : semName);
+                                        }
+                                    }
+                                }
+                                updateSemesterSpinner(displayNames);
+                            })
+                            .addOnFailureListener(e -> {
+                                Toast.makeText(this, "Failed to load semesters: " + e.getMessage(), Toast.LENGTH_SHORT).show();
+                            });
                 })
                 .addOnFailureListener(e -> {
-                    Toast.makeText(this, "Failed to load: " + e.getMessage(), Toast.LENGTH_SHORT).show();
+                    Toast.makeText(this, "Failed to load batch info: " + e.getMessage(), Toast.LENGTH_SHORT).show();
                 });
     }
 
@@ -354,30 +366,62 @@ public class ManualResultEntryActivity extends AppCompatActivity {
             return;
         }
 
-        String semFullId = semesterList.get(semPos - 1).id; // This is already the full doc ID like B05_BIT_...
+        String degId = degreeList.get(degPos - 1).id;
+        String batchFull = batchList.get(batchPos - 1).id; 
+        String semFullId = semesterList.get(semPos - 1).id;
+        String sId = semesterList.get(semPos - 1).name;
         
-        Toast.makeText(this, "Querying: Modules/" + semFullId, Toast.LENGTH_SHORT).show();
+        Toast.makeText(this, "Querying Modules...", Toast.LENGTH_SHORT).show();
         
-        db.collection("Modules").document(semFullId)
-                .collection("Module IDs").get()
-                .addOnSuccessListener(queryDocumentSnapshots -> {
-                    availableModules.clear();
-                    llModuleContainer.removeAllViews(); // Clear previous semester modules
+        availableModules.clear();
+        llModuleContainer.removeAllViews(); // Clear previous semester modules
 
-                    for (QueryDocumentSnapshot doc : queryDocumentSnapshots) {
-                        ModuleData module = new ModuleData(
-                                doc.getString("moduleId"),
-                                doc.getString("moduleName"),
-                                doc.getString("credits")
-                        );
-                        availableModules.add(module);
-                        addModuleRow(module);
+        java.util.Set<String> addedModuleIds = new java.util.HashSet<>();
+        
+        db.collection("Degrees").document(degId).collection("Modules")
+                .whereEqualTo("batchId", batchFull)
+                .whereEqualTo("semesterId", sId)
+                .get()
+                .addOnCompleteListener(taskA -> {
+                    if (taskA.isSuccessful() && taskA.getResult() != null) {
+                        for (QueryDocumentSnapshot doc : taskA.getResult()) {
+                            addModuleFromDoc(doc, addedModuleIds);
+                        }
                     }
                     
-                    if (availableModules.isEmpty()) {
-                        Toast.makeText(this, "No modules found for this semester", Toast.LENGTH_SHORT).show();
-                    }
+                    db.collection("Modules").document(semFullId)
+                            .collection("Module IDs").get()
+                            .addOnCompleteListener(taskB -> {
+                                if (taskB.isSuccessful() && taskB.getResult() != null) {
+                                    for (QueryDocumentSnapshot doc : taskB.getResult()) {
+                                        addModuleFromDoc(doc, addedModuleIds);
+                                    }
+                                }
+                                
+                                if (availableModules.isEmpty()) {
+                                    Toast.makeText(ManualResultEntryActivity.this, "No modules found for this semester", Toast.LENGTH_SHORT).show();
+                                }
+                            });
                 });
+    }
+
+    private void addModuleFromDoc(QueryDocumentSnapshot doc, java.util.Set<String> addedModuleIds) {
+        String mId = doc.getString("moduleId");
+        if (mId == null) {
+            mId = doc.getString("moduleCode");
+        }
+        if (mId == null || addedModuleIds.contains(mId)) {
+            return;
+        }
+
+        String mName = doc.getString("moduleName");
+        Object credsObj = doc.get("credits");
+        String credits = credsObj != null ? String.valueOf(credsObj) : "0";
+
+        ModuleData module = new ModuleData(mId, mName, credits);
+        availableModules.add(module);
+        addedModuleIds.add(mId);
+        addModuleRow(module);
     }
 
     private void addModuleRow(ModuleData module) {
