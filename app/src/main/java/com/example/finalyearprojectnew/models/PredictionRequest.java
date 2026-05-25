@@ -11,6 +11,9 @@ public class PredictionRequest {
     @SerializedName("attendance")
     public double attendance;
 
+    @SerializedName("module_attendances")
+    public Map<String, Double> moduleAttendances;
+
     @SerializedName("study_hours")
     public double studyHours;
 

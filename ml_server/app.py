@@ -45,19 +45,25 @@ def predict():
 
         sem_gpa = calc_results['current_gpa']
         
-        # 4. Handle 80% Attendance Rule
-        if attendance < 80.0:
-            return jsonify({
-                'student_id': student_id,
-                'extracted_grades': extracted_grades,
-                'semester_gpa': sem_gpa,
-                'predicted_future_gpa': 0.0,
-                'motivation_tip': "WARNING: Attendance below 80%. Student ineligible for final exams.",
-                'ab_modules': calc_results['ab_modules'],
-                'mc_modules': calc_results['mc_modules'],
-                'ne_modules': calc_results['ne_modules'],
-                'eligible': False
-            }), 200
+        # 4. Handle 80% Attendance Rule Module-wise
+        module_attendances = json_data.get('module_attendances', {})
+        failed_modules = []
+        total_credits = 0
+        failed_credits = 0
+
+        for mod in extracted_grades:
+            mod_name = mod.get('moduleName', '')
+            try:
+                mod_credits = float(mod.get('credits', 0))
+            except ValueError:
+                mod_credits = 0
+            
+            total_credits += mod_credits
+            
+            if mod_name in module_attendances:
+                if module_attendances[mod_name] < 80.0:
+                    failed_modules.append(mod_name)
+                    failed_credits += mod_credits
 
         # 5. Multiple Linear Regression Prediction (Reduced 5 Factors)
         predicted_gpa = predict_future_gpa(
@@ -68,10 +74,20 @@ def predict():
             stress_level=stress_level
         )
 
-        # 6. Motivation Tip
-        if predicted_gpa >= 3.0: tip = "Excellent! You are on track for outstanding results. Keep it up!"
-        elif predicted_gpa >= 2.0: tip = "Good progress. Focus more on weak modules to reach your full potential."
-        else: tip = "Your predicted GPA is low. Organize a strict study schedule and seek academic help. You can improve!"
+        # 6. Apply Mathematical Penalty for failed modules
+        if total_credits > 0 and failed_credits > 0:
+            passed_credits = total_credits - failed_credits
+            adjusted_gpa = (predicted_gpa * passed_credits) / total_credits
+            predicted_gpa = round(adjusted_gpa, 2)
+            
+            tip = f"WARNING: You are predicted to fail {', '.join(failed_modules)} due to <80% attendance. Adjusted predicted GPA is {predicted_gpa:.2f}."
+            eligible = False
+        else:
+            eligible = True
+            # 7. Motivation Tip
+            if predicted_gpa >= 3.0: tip = "Excellent! You are on track for outstanding results. Keep it up!"
+            elif predicted_gpa >= 2.0: tip = "Good progress. Focus more on weak modules to reach your full potential."
+            else: tip = "Your predicted GPA is low. Organize a strict study schedule and seek academic help. You can improve!"
 
         return jsonify({
             'student_id': student_id,
@@ -82,7 +98,7 @@ def predict():
             'ab_modules': calc_results['ab_modules'],
             'mc_modules': calc_results['mc_modules'],
             'ne_modules': calc_results['ne_modules'],
-            'eligible': True
+            'eligible': eligible
         }), 200
 
     except Exception as e:

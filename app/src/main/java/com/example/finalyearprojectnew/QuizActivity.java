@@ -19,6 +19,7 @@ import com.example.finalyearprojectnew.models.PredictionResponse;
 import com.example.finalyearprojectnew.network.RetrofitClient;
 import com.google.firebase.firestore.FirebaseFirestore;
 
+import java.util.ArrayList;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
@@ -41,28 +42,11 @@ public class QuizActivity extends AppCompatActivity {
     private List<Map<String, Object>> studentResults;
     private String studentId, semesterName;
 
-    private String[] questions = {
-            "What is your target overall average attendance percentage across all modules? (0-100)",
-            "How many hours per week do you realistically commit to focused self-study?",
-            "On average, how many hours of consistent, uninterrupted sleep do you get per night?",
-            "1. In the last month, how often have you been upset because of something that happened unexpectedly?",
-            "2. In the last month, how often have you felt that you were unable to control the important things in your life?",
-            "3. In the last month, how often have you felt nervous and \"stressed\"?",
-            "4. In the last month, how often have you felt confident about your ability to handle your personal problems?",
-            "5. In the last month, how often have you felt that things were going your way?",
-            "6. In the last month, how often have you found that you could not cope with all the things that you had to do?",
-            "7. In the last month, how often have you been able to control irritations in your life?",
-            "8. In the last month, how often have you felt that you were on top of things?",
-            "9. In the last month, how often have you been angered because of things that were outside of your control?",
-            "10. In the last month, how often have you felt difficulties were piling up so high that you could not overcome them?"
-    };
-
-    private String[] contexts = new String[13];
-    private double[] answers = new double[13];
-    private boolean[] isRatingQuestion = {
-            false, false, false,
-            true, true, true, true, true, true, true, true, true, true
-    };
+    private List<String> questions = new ArrayList<>();
+    private List<String> contexts = new ArrayList<>();
+    private List<Boolean> isRatingQuestion = new ArrayList<>();
+    private List<Double> answers = new ArrayList<>();
+    private List<String> moduleNamesForAttendance = new ArrayList<>();
     
     private int pssTotalScore = 0;
 
@@ -77,16 +61,28 @@ public class QuizActivity extends AppCompatActivity {
         semesterName = getIntent().getStringExtra("semesterName");
         studentId = getSharedPreferences("UserSession", MODE_PRIVATE).getString("student_id", "Unknown");
 
-        calculateContexts();
+        buildQuestionsList();
         initViews();
         setupListeners();
         updateQuestion();
     }
 
-    private void calculateContexts() {
+    private void buildQuestionsList() {
         int totalCredits = 0;
+        
+        // 1. Add Attendance Questions dynamically
         if (studentResults != null) {
             for (Map<String, Object> module : studentResults) {
+                String moduleName = "";
+                Object mNameObj = module.get("moduleName");
+                if (mNameObj != null) moduleName = mNameObj.toString();
+                
+                moduleNamesForAttendance.add(moduleName);
+                questions.add("What is your target attendance percentage for " + moduleName + "? (0-100)");
+                contexts.add("Saegis Campus By-Laws require a minimum of 80% attendance to be eligible for the exam for " + moduleName + ".");
+                isRatingQuestion.add(false);
+                answers.add(0.0);
+                
                 Object creditsObj = module.get("credits");
                 if (creditsObj != null) {
                     try {
@@ -101,12 +97,37 @@ public class QuizActivity extends AppCompatActivity {
         int totalNotionalHours = totalCredits * 50;
         int weeklyStudyTarget = totalNotionalHours / 15; // standard 15 week semester
 
-        contexts[0] = "Saegis Campus By-Laws require a minimum of 80% attendance to be eligible for end-semester examinations.";
-        contexts[1] = "Based on SLQF, your " + totalCredits + " registered credits require " + totalNotionalHours + " notional hours. This equals roughly " + weeklyStudyTarget + " hours of self-study per week.";
-        contexts[2] = "Research indicates that memory consolidation degrades significantly if sleep schedules are restricted or highly erratic.";
+        // 2. Study Hours
+        questions.add("How many hours per week do you realistically commit to focused self-study?");
+        contexts.add("Based on SLQF, your " + totalCredits + " registered credits require " + totalNotionalHours + " notional hours. This equals roughly " + weeklyStudyTarget + " hours of self-study per week.");
+        isRatingQuestion.add(false);
+        answers.add(0.0);
+
+        // 3. Sleep
+        questions.add("On average, how many hours of consistent, uninterrupted sleep do you get per night?");
+        contexts.add("Research indicates that memory consolidation degrades significantly if sleep schedules are restricted or highly erratic.");
+        isRatingQuestion.add(false);
+        answers.add(0.0);
         
-        for(int i = 3; i < 13; i++) {
-            contexts[i] = "Perceived Stress Scale (PSS-10). Answer based on your feelings in the last month.";
+        // 4. PSS-10
+        String[] pssQuestions = {
+            "1. In the last month, how often have you been upset because of something that happened unexpectedly?",
+            "2. In the last month, how often have you felt that you were unable to control the important things in your life?",
+            "3. In the last month, how often have you felt nervous and \"stressed\"?",
+            "4. In the last month, how often have you felt confident about your ability to handle your personal problems?",
+            "5. In the last month, how often have you felt that things were going your way?",
+            "6. In the last month, how often have you found that you could not cope with all the things that you had to do?",
+            "7. In the last month, how often have you been able to control irritations in your life?",
+            "8. In the last month, how often have you felt that you were on top of things?",
+            "9. In the last month, how often have you been angered because of things that were outside of your control?",
+            "10. In the last month, how often have you felt difficulties were piling up so high that you could not overcome them?"
+        };
+        
+        for (String q : pssQuestions) {
+            questions.add(q);
+            contexts.add("Perceived Stress Scale (PSS-10). Answer based on your feelings in the last month.");
+            isRatingQuestion.add(true);
+            answers.add(0.0);
         }
     }
 
@@ -124,13 +145,13 @@ public class QuizActivity extends AppCompatActivity {
         btnPrev = findViewById(R.id.btnPrev);
         btnNext = findViewById(R.id.btnNext);
         
-        quizProgress.setMax(questions.length);
+        quizProgress.setMax(questions.size());
     }
 
     private void setupListeners() {
         btnNext.setOnClickListener(v -> {
             if (saveAnswer()) {
-                if (currentQuestionIndex < questions.length - 1) {
+                if (currentQuestionIndex < questions.size() - 1) {
                     currentQuestionIndex++;
                     updateQuestion();
                 } else {
@@ -170,41 +191,43 @@ public class QuizActivity extends AppCompatActivity {
     }
 
     private void updateQuestion() {
-        tvQuestionCount.setText("Step " + (currentQuestionIndex + 1) + " of " + questions.length);
-        tvQuestionText.setText(questions[currentQuestionIndex]);
+        tvQuestionCount.setText("Step " + (currentQuestionIndex + 1) + " of " + questions.size());
+        tvQuestionText.setText(questions.get(currentQuestionIndex));
         
-        if (contexts[currentQuestionIndex] != null && !contexts[currentQuestionIndex].isEmpty()) {
+        String contextStr = contexts.get(currentQuestionIndex);
+        if (contextStr != null && !contextStr.isEmpty()) {
             tvQuestionContext.setVisibility(View.VISIBLE);
-            tvQuestionContext.setText(contexts[currentQuestionIndex]);
+            tvQuestionContext.setText(contextStr);
         } else {
             tvQuestionContext.setVisibility(View.GONE);
         }
         
         quizProgress.setProgress(currentQuestionIndex + 1);
 
-        if (isRatingQuestion[currentQuestionIndex]) {
+        if (isRatingQuestion.get(currentQuestionIndex)) {
             etQuizInput.setVisibility(View.GONE);
             llRatingContainer.setVisibility(View.VISIBLE);
             seekBarRating.setMax(4);
-            seekBarRating.setProgress((int) answers[currentQuestionIndex]);
+            seekBarRating.setProgress(answers.get(currentQuestionIndex).intValue());
             tvRatingValue.setText(getPssLabel(seekBarRating.getProgress()));
             tvLabelStart.setText("Never");
             tvLabelEnd.setText("Very Often");
         } else {
             etQuizInput.setVisibility(View.VISIBLE);
             llRatingContainer.setVisibility(View.GONE);
-            etQuizInput.setText(answers[currentQuestionIndex] > 0 ? String.valueOf(answers[currentQuestionIndex]) : "");
+            double ans = answers.get(currentQuestionIndex);
+            etQuizInput.setText(ans > 0 ? String.valueOf(ans) : "");
             etQuizInput.requestFocus();
         }
 
         btnPrev.setVisibility(currentQuestionIndex == 0 ? View.INVISIBLE : View.VISIBLE);
-        btnNext.setText(currentQuestionIndex == questions.length - 1 ? "Get Prediction" : "Continue");
+        btnNext.setText(currentQuestionIndex == questions.size() - 1 ? "Get Prediction" : "Continue");
     }
 
     private boolean saveAnswer() {
         try {
-            if (isRatingQuestion[currentQuestionIndex]) {
-                answers[currentQuestionIndex] = seekBarRating.getProgress();
+            if (isRatingQuestion.get(currentQuestionIndex)) {
+                answers.set(currentQuestionIndex, (double) seekBarRating.getProgress());
             } else {
                 String input = etQuizInput.getText().toString().trim();
                 if (input.isEmpty()) {
@@ -212,11 +235,11 @@ public class QuizActivity extends AppCompatActivity {
                     return false;
                 }
                 double val = Double.parseDouble(input);
-                if (currentQuestionIndex == 0 && (val < 0 || val > 100)) {
+                if (currentQuestionIndex < moduleNamesForAttendance.size() && (val < 0 || val > 100)) {
                     Toast.makeText(this, "Attendance must be between 0 and 100", Toast.LENGTH_SHORT).show();
                     return false;
                 }
-                answers[currentQuestionIndex] = val;
+                answers.set(currentQuestionIndex, val);
             }
             return true;
         } catch (Exception e) {
@@ -231,12 +254,31 @@ public class QuizActivity extends AppCompatActivity {
         progressDialog.setCancelable(false);
         progressDialog.show();
 
+        // 1. Process Module Attendances
+        Map<String, Double> moduleAttendances = new HashMap<>();
+        double totalAttendance = 0.0;
+        int numModules = moduleNamesForAttendance.size();
+        for (int i = 0; i < numModules; i++) {
+            moduleAttendances.put(moduleNamesForAttendance.get(i), answers.get(i));
+            totalAttendance += answers.get(i);
+        }
+        double avgAttendance = numModules > 0 ? totalAttendance / numModules : 0.0;
+        
+        // Next is Study Hours and Sleep Hours
+        double studyHours = answers.get(numModules);
+        double sleepHours = answers.get(numModules + 1);
+        
+        // PSS-10 start index
+        int pssStartIndex = numModules + 2;
+
         // Calculate PSS-10 Score
         pssTotalScore = 0;
-        for (int i = 3; i < 13; i++) {
-            int score = (int) answers[i];
-            // Reverse score for questions 4, 5, 7, 8 (Indices 6, 7, 9, 10 in array)
-            if (i == 6 || i == 7 || i == 9 || i == 10) {
+        for (int i = pssStartIndex; i < pssStartIndex + 10; i++) {
+            int score = answers.get(i).intValue();
+            // The questions in pssQuestions array are indices 0-9
+            // Reverse score for questions 4, 5, 7, 8 (array index 3, 4, 6, 7)
+            int pssRelativeIndex = i - pssStartIndex;
+            if (pssRelativeIndex == 3 || pssRelativeIndex == 4 || pssRelativeIndex == 6 || pssRelativeIndex == 7) {
                 score = 4 - score;
             }
             pssTotalScore += score;
@@ -252,9 +294,10 @@ public class QuizActivity extends AppCompatActivity {
 
         PredictionRequest request = new PredictionRequest();
         request.studentId = studentId;
-        request.attendance = answers[0];
-        request.studyHours = answers[1];
-        request.sleepHours = answers[2];
+        request.attendance = avgAttendance; // Average used as fallback
+        request.moduleAttendances = moduleAttendances;
+        request.studyHours = studyHours;
+        request.sleepHours = sleepHours;
         request.stressLevel = mappedStressLevel;
         request.gpa = currentGpa; 
         request.results = studentResults;
@@ -307,6 +350,7 @@ public class QuizActivity extends AppCompatActivity {
         
         // Save the inputs that caused this prediction
         historyData.put("attendance", requestData.attendance);
+        historyData.put("moduleAttendances", requestData.moduleAttendances);
         historyData.put("studyHours", requestData.studyHours);
         historyData.put("sleepHours", requestData.sleepHours);
         historyData.put("stressLevel", requestData.stressLevel); // 1-5 scale
