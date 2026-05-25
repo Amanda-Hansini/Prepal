@@ -23,7 +23,7 @@ GRADE_POINTS = {
     "D+": 1.30, "D": 1.00, "E": 0.00, "F": 0.00
 }
 
-SPECIAL_GRADES = ["AB", "MC", "NE"]
+SPECIAL_GRADES = ["AB", "MC", "NE", "WH", "INC"]
 
 def get_module_credit(module_name):
     """
@@ -59,6 +59,8 @@ def calculate_gpa(extracted_grades):
     ab_modules = []
     mc_modules = []
     ne_modules = []
+    wh_modules = []
+    inc_modules = []
 
     # Check if extracted_grades is a dictionary (old format) or list (new format)
     if isinstance(extracted_grades, dict):
@@ -76,6 +78,8 @@ def calculate_gpa(extracted_grades):
                 if grade == "AB": ab_modules.append(module)
                 elif grade == "MC": mc_modules.append(module)
                 elif grade == "NE": ne_modules.append(module)
+                elif grade == "WH": wh_modules.append(module)
+                elif grade == "INC": inc_modules.append(module)
     else:
         # Handle new list format
         for item in extracted_grades:
@@ -106,9 +110,14 @@ def calculate_gpa(extracted_grades):
                 if grade == "AB": ab_modules.append(module)
                 elif grade == "MC": mc_modules.append(module)
                 elif grade == "NE": ne_modules.append(module)
+                elif grade == "WH": wh_modules.append(module)
+                elif grade == "INC": inc_modules.append(module)
                 
+    has_special_grade = len(ab_modules) > 0 or len(mc_modules) > 0 or len(ne_modules) > 0 or len(wh_modules) > 0 or len(inc_modules) > 0
     # CGPA Formula: Sum of All Quality Points / Total Credit Hours (Sum of all attempted credits)
     gpa = total_points / total_credits if total_credits > 0 else 0.0
+    if has_special_grade:
+        gpa = 0.0
     
     return {
         "current_gpa": round(gpa, 2),
@@ -116,6 +125,9 @@ def calculate_gpa(extracted_grades):
         "failed_count": failed_count,
         "ab_modules": ab_modules,
         "mc_modules": mc_modules,
-        "ne_modules": ne_modules
+        "ne_modules": ne_modules,
+        "wh_modules": wh_modules,
+        "inc_modules": inc_modules,
+        "has_special_grade": has_special_grade
     }
 

@@ -20,6 +20,10 @@ import com.github.mikephil.charting.data.LineDataSet;
 import com.github.mikephil.charting.data.BarData;
 import com.github.mikephil.charting.data.BarDataSet;
 import com.github.mikephil.charting.data.BarEntry;
+import com.github.mikephil.charting.charts.PieChart;
+import com.github.mikephil.charting.data.PieData;
+import com.github.mikephil.charting.data.PieDataSet;
+import com.github.mikephil.charting.data.PieEntry;
 import com.github.mikephil.charting.formatter.IndexAxisValueFormatter;
 import com.github.mikephil.charting.formatter.ValueFormatter;
 import com.google.android.material.bottomnavigation.BottomNavigationView;
@@ -41,6 +45,8 @@ public class StudentHomeActivity extends AppCompatActivity {
     private String studentId;
     
     private List<DocumentSnapshot> allSemesters = new ArrayList<>();
+    private List<DocumentSnapshot> predictionHistory = new ArrayList<>();
+    private DocumentSnapshot currentPredictionDoc;
     private SemesterChipAdapter chipAdapter;
     
     private TextView tvStudentId, tvMotivationTip, tvWelcomeText, tvSpecialStatusNote, tvCurrentDate;
@@ -48,6 +54,9 @@ public class StudentHomeActivity extends AppCompatActivity {
     private TextView tvSemGpaSub, tvCumGpaSub, tvPredGpaSub;
     private androidx.appcompat.widget.AppCompatButton btnRedoPrediction;
     private android.widget.ImageView ivProfile;
+    private android.widget.HorizontalScrollView hsvGpaCards;
+    private android.widget.ImageView ivScrollIndicator;
+    private androidx.cardview.widget.CardView cardPredGpa;
 
     @Override
     protected void onCreate(Bundle savedInstanceState) {
@@ -90,7 +99,6 @@ public class StudentHomeActivity extends AppCompatActivity {
         tvPredGpa = findViewById(R.id.tvPredGpa);
         tvSemGpaSub = findViewById(R.id.tvSemGpaSub);
         tvCumGpaSub = findViewById(R.id.tvCumGpaSub);
-        tvPredGpaSub = findViewById(R.id.tvPredGpaSub);
         btnRedoPrediction = findViewById(R.id.btnRedoPrediction);
         btnViewFullReport = findViewById(R.id.btnViewFullReport);
 
@@ -110,6 +118,36 @@ public class StudentHomeActivity extends AppCompatActivity {
         btnViewFullReport.setOnClickListener(v -> {
             startActivity(new Intent(StudentHomeActivity.this, PerformanceReportActivity.class));
         });
+        
+        cardPredGpa = findViewById(R.id.cardPredGpa);
+        cardPredGpa.setOnClickListener(v -> showPredictionInsightsDialog());
+        
+        android.widget.LinearLayout llTapForInsights = findViewById(R.id.llTapForInsights);
+        android.animation.ObjectAnimator pulseAnim = android.animation.ObjectAnimator.ofFloat(llTapForInsights, "alpha", 1f, 0.5f, 1f);
+        pulseAnim.setDuration(1500);
+        pulseAnim.setRepeatCount(android.animation.ObjectAnimator.INFINITE);
+        pulseAnim.start();
+        
+        hsvGpaCards = findViewById(R.id.hsvGpaCards);
+        ivScrollIndicator = findViewById(R.id.ivScrollIndicator);
+
+        // Bounce animation for the scroll indicator
+        android.animation.ObjectAnimator bounceAnim = android.animation.ObjectAnimator.ofFloat(ivScrollIndicator, "translationX", 0f, 15f, 0f);
+        bounceAnim.setDuration(1500);
+        bounceAnim.setRepeatCount(android.animation.ObjectAnimator.INFINITE);
+        bounceAnim.start();
+        
+        ivScrollIndicator.setOnClickListener(v -> {
+            hsvGpaCards.smoothScrollBy(500, 0);
+        });
+
+
+
+        // Peek animation to show the scrollable area
+        hsvGpaCards.postDelayed(() -> {
+            hsvGpaCards.smoothScrollBy(150, 0);
+            hsvGpaCards.postDelayed(() -> hsvGpaCards.smoothScrollBy(-150, 0), 400);
+        }, 800);
     }
 
     private void loadStudentProfileImage() {
@@ -126,7 +164,6 @@ public class StudentHomeActivity extends AppCompatActivity {
                 });
     }
 
-    private List<DocumentSnapshot> predictionHistory = new ArrayList<>();
 
     private void loadStudentAcademicData() {
         db.collection("AllStudents").document(studentId)
@@ -137,12 +174,13 @@ public class StudentHomeActivity extends AppCompatActivity {
                     predictionHistory = predictionSnap.getDocuments();
                     
                     if (!predictionHistory.isEmpty()) {
-                        DocumentSnapshot latest = predictionHistory.get(predictionHistory.size() - 1);
-                        String tip = latest.getString("motivationTip");
+                        currentPredictionDoc = predictionHistory.get(predictionHistory.size() - 1);
+                        String tip = currentPredictionDoc.getString("motivationTip");
                         if (tip != null) tvMotivationTip.setText(tip);
-                        Double predVal = latest.getDouble("predictedGpa");
+                        Double predVal = currentPredictionDoc.getDouble("predictedGpa");
                         tvPredGpa.setText(String.format(java.util.Locale.US, "%.2f", predVal != null ? predVal : 0.0));
                     } else {
+                        currentPredictionDoc = null;
                         tvPredGpa.setText("0.00");
                         tvMotivationTip.setText("Keep going! Complete a prediction to see your target.");
                     }
@@ -157,8 +195,11 @@ public class StudentHomeActivity extends AppCompatActivity {
                                     calculateGpasAndPopulateUI(allSemesters);
                                     setupSemesterSelectionBar();
                                 } else {
-                                    updateGpaDisplays(0, 0, 0, null);
-                                    setupPerformanceBarChart(null);
+                                    // Redirect to ManualResultEntryActivity if no data is available
+                                    Intent intent = new Intent(StudentHomeActivity.this, ManualResultEntryActivity.class);
+                                    intent.setFlags(Intent.FLAG_ACTIVITY_NEW_TASK | Intent.FLAG_ACTIVITY_CLEAR_TASK);
+                                    startActivity(intent);
+                                    finish();
                                 }
                             });
                 });
@@ -193,22 +234,26 @@ public class StudentHomeActivity extends AppCompatActivity {
                 boolean hasSpecial = checkForSpecialStatuses(modules);
                 tvSpecialStatusNote.setVisibility(hasSpecial ? View.VISIBLE : View.GONE);
                 
-                Double semGpa = sem.getDouble("semesterGpa");
-                tvSemGpa.setText(String.format(java.util.Locale.US, "%.2f", semGpa != null ? semGpa : 0.0));
-                
-                String semName = sem.getString("semesterName");
-                tvSemGpaSub.setText(semName != null ? semName : "Semester " + (position + 1));
-                tvCumGpaSub.setText("Till " + (semName != null ? semName : "Semester " + (position + 1)));
-                
+                // Calculate both Semester GPA and Cumulative GPA locally to ensure 100% consistency
                 double totalPts = 0;
                 double totalCreds = 0;
+                double currentSemPts = 0;
+                double currentSemCreds = 0;
+                
+                boolean cumHasSpecial = false;
+                boolean semHasSpecial = false;
+
                 for (int i = 0; i <= position; i++) {
                     DocumentSnapshot s = allSemesters.get(i);
                     List<Map<String, Object>> mods = (List<Map<String, Object>>) s.get("modules");
                     if (mods == null) continue;
+                    boolean thisSemSpecial = false;
                     for (Map<String, Object> m : mods) {
                         String grade = (String) m.get("grade");
-                        if (grade != null && (grade.equals("MC") || grade.equals("AB") || grade.equals("NE"))) continue;
+                        if (grade != null && (grade.equals("MC") || grade.equals("AB") || grade.equals("NE") || grade.equals("WH") || grade.equals("INC"))) {
+                            thisSemSpecial = true;
+                            continue;
+                        }
                         
                         double c = 0;
                         Object co = m.get("credits");
@@ -222,11 +267,40 @@ public class StudentHomeActivity extends AppCompatActivity {
                         
                         totalPts += (p * c);
                         totalCreds += c;
+                        
+                        if (i == position) {
+                            currentSemPts += (p * c);
+                            currentSemCreds += c;
+                        }
+                    }
+                    if (thisSemSpecial) {
+                        cumHasSpecial = true;
+                        if (i == position) {
+                            semHasSpecial = true;
+                        }
                     }
                 }
+                
+                double semGpa = currentSemCreds > 0 ? (currentSemPts / currentSemCreds) : 0;
+                if (semHasSpecial) {
+                    tvSemGpa.setText("N/A");
+                } else {
+                    tvSemGpa.setText(String.format(java.util.Locale.US, "%.2f", semGpa));
+                }
+                
+                String semName = sem.getString("semesterName");
+                tvSemGpaSub.setText(semName != null ? semName : "Semester " + (position + 1));
+                tvCumGpaSub.setText("Till " + (semName != null ? semName : "Semester " + (position + 1)));
+                
                 // CGPA Formula: Sum of All Quality Points / Total Credit Hours (Sum of all attempted credits)
                 double cumGpa = totalCreds > 0 ? (totalPts / totalCreds) : 0;
-                tvCumGpa.setText(String.format(java.util.Locale.US, "%.2f", cumGpa));
+                if (cumHasSpecial) {
+                    tvCumGpa.setText("N/A");
+                    setupClassStandingChart(0.0);
+                } else {
+                    tvCumGpa.setText(String.format(java.util.Locale.US, "%.2f", cumGpa));
+                    setupClassStandingChart(cumGpa);
+                }
                 
                 com.google.firebase.Timestamp semTime = sem.getTimestamp("timestamp");
                 if (semTime != null && !predictionHistory.isEmpty()) {
@@ -241,6 +315,8 @@ public class StudentHomeActivity extends AppCompatActivity {
                     if (matchingPred == null && !predictionHistory.isEmpty()) {
                         matchingPred = predictionHistory.get(predictionHistory.size() - 1);
                     }
+                    
+                    currentPredictionDoc = matchingPred;
                     
                     if (matchingPred != null) {
                         Double pGpa = matchingPred.getDouble("predictedGpa");
@@ -259,7 +335,7 @@ public class StudentHomeActivity extends AppCompatActivity {
         if (modules == null) return false;
         for (Map<String, Object> m : modules) {
             String grade = (String) m.get("grade");
-            if (grade != null && (grade.equals("MC") || grade.equals("AB") || grade.equals("NE"))) {
+            if (grade != null && (grade.equals("MC") || grade.equals("AB") || grade.equals("NE") || grade.equals("WH") || grade.equals("INC"))) {
                 return true;
             }
         }
@@ -269,20 +345,28 @@ public class StudentHomeActivity extends AppCompatActivity {
     private void calculateGpasAndPopulateUI(List<DocumentSnapshot> semesters) {
         double totalPoints = 0;
         double totalCredits = 0;
-        double latestSemGpa = 0;
+        double latestSemPoints = 0;
+        double latestSemCredits = 0;
         List<Map<String, Object>> latestResults = null;
         List<Entry> gpaTrendEntries = new ArrayList<>();
+        
+        boolean cumHasSpecial = false;
+        boolean latestSemHasSpecial = false;
         
         for (int i = 0; i < semesters.size(); i++) {
             DocumentSnapshot sem = semesters.get(i);
             List<Map<String, Object>> modules = (List<Map<String, Object>>) sem.get("modules");
             if (modules == null) continue;
             
-            if (i == semesters.size() - 1) { 
-                latestSemGpa = sem.getDouble("semesterGpa") != null ? sem.getDouble("semesterGpa") : 0.0;
+            boolean isLatest = (i == semesters.size() - 1);
+            if (isLatest) { 
                 latestResults = modules;
             }
             
+            double semPts = 0;
+            double semCreds = 0;
+            boolean thisSemSpecial = false;
+
             for (Map<String, Object> mod : modules) {
                 String grade = (String) mod.get("grade");
                 double credits = 0;
@@ -295,23 +379,53 @@ public class StudentHomeActivity extends AppCompatActivity {
                 if (ptObj instanceof Double) points = (Double) ptObj;
                 else if (ptObj instanceof Long) points = ((Long) ptObj).doubleValue();
 
-                if (grade != null && (grade.equals("MC") || grade.equals("AB") || grade.equals("NE"))) continue;
+                if (grade != null && (grade.equals("MC") || grade.equals("AB") || grade.equals("NE") || grade.equals("WH") || grade.equals("INC"))) {
+                    thisSemSpecial = true;
+                    continue;
+                }
                 
-                totalPoints += (points * credits);
+                double pc = points * credits;
+                totalPoints += pc;
                 totalCredits += credits;
+                semPts += pc;
+                semCreds += credits;
+            }
+
+            if (thisSemSpecial) {
+                cumHasSpecial = true;
+                if (isLatest) {
+                    latestSemHasSpecial = true;
+                }
+                gpaTrendEntries.add(new Entry(i, 0f));
+            } else {
+                double semGpa = semCreds > 0 ? (semPts / semCreds) : 0;
+                gpaTrendEntries.add(new Entry(i, (float) semGpa));
+            }
+
+            if (isLatest) {
+                latestSemPoints = semPts;
+                latestSemCredits = semCreds;
             }
         }
 
-        for (int i = 0; i < semesters.size(); i++) {
-            Double gpa = semesters.get(i).getDouble("semesterGpa");
-            gpaTrendEntries.add(new Entry(i, gpa != null ? gpa.floatValue() : 0f));
-        }
-
+        // Both use exactly the same formula natively on the client
+        double latestSemGpa = latestSemCredits > 0 ? (latestSemPoints / latestSemCredits) : 0;
         // CGPA Formula: Sum of All Quality Points / Total Credit Hours
         double cumulativeGpa = totalCredits > 0 ? (totalPoints / totalCredits) : 0;
         
-        tvSemGpa.setText(String.format(java.util.Locale.US, "%.2f", latestSemGpa));
-        tvCumGpa.setText(String.format(java.util.Locale.US, "%.2f", cumulativeGpa));
+        if (latestSemHasSpecial) {
+            tvSemGpa.setText("N/A");
+        } else {
+            tvSemGpa.setText(String.format(java.util.Locale.US, "%.2f", latestSemGpa));
+        }
+        
+        if (cumHasSpecial) {
+            tvCumGpa.setText("N/A");
+            setupClassStandingChart(0.0);
+        } else {
+            tvCumGpa.setText(String.format(java.util.Locale.US, "%.2f", cumulativeGpa));
+            setupClassStandingChart(cumulativeGpa);
+        }
         
         if (semesters.size() > 0) {
             DocumentSnapshot latest = semesters.get(semesters.size() - 1);
@@ -481,6 +595,153 @@ public class StudentHomeActivity extends AppCompatActivity {
             dataSet.setFillDrawable(new GradientDrawable(GradientDrawable.Orientation.TOP_BOTTOM, 
                     new int[]{Color.parseColor("#33057BFE"), Color.parseColor("#05FFFFFF")}));
         }
+    }
+    
+    private void setupClassStandingChart(double cgpa) {
+        PieChart pieChart = findViewById(R.id.chartDegreeClass);
+        pieChart.getDescription().setEnabled(false);
+        pieChart.getLegend().setEnabled(false);
+        pieChart.setDrawHoleEnabled(true);
+        pieChart.setHoleColor(Color.TRANSPARENT);
+        pieChart.setHoleRadius(75f);
+        pieChart.setTransparentCircleRadius(80f);
+        pieChart.setDrawEntryLabels(false);
+
+        List<PieEntry> entries = new ArrayList<>();
+        entries.add(new PieEntry((float) cgpa, ""));
+        entries.add(new PieEntry((float) (4.0 - cgpa), ""));
+
+        PieDataSet dataSet = new PieDataSet(entries, "");
+        dataSet.setDrawValues(false);
+        
+        int color;
+        String className;
+        if (cgpa >= 3.70) {
+            color = Color.parseColor("#FFD700"); // 1st Class
+            className = "1st Class";
+        } else if (cgpa >= 3.30) {
+            color = Color.parseColor("#2DCC70"); // 2nd Upper
+            className = "2nd Upper";
+        } else if (cgpa >= 3.00) {
+            color = Color.parseColor("#057BFE"); // 2nd Lower
+            className = "2nd Lower";
+        } else if (cgpa >= 2.00) {
+            color = Color.parseColor("#F39C12"); // Ordinary Pass
+            className = "Ordinary Pass";
+        } else {
+            color = Color.parseColor("#E74C3C"); // Weak
+            className = "Weak";
+        }
+        
+        pieChart.setCenterText(className + "\nStanding");
+        pieChart.setCenterTextSize(12f);
+        pieChart.setCenterTextColor(color);
+        pieChart.setCenterTextTypeface(android.graphics.Typeface.DEFAULT_BOLD);
+
+        dataSet.setColors(color, Color.parseColor("#E0E0E0"));
+        
+        PieData data = new PieData(dataSet);
+        pieChart.setData(data);
+        pieChart.animateY(1000);
+        pieChart.invalidate();
+    }
+
+    private void showPredictionInsightsDialog() {
+        if (currentPredictionDoc == null) {
+            android.widget.Toast.makeText(this, "No prediction data available for this semester.", android.widget.Toast.LENGTH_SHORT).show();
+            return;
+        }
+
+        Double attendance = currentPredictionDoc.getDouble("attendance");
+        Double studyHours = currentPredictionDoc.getDouble("studyHours");
+        Double sleepHours = currentPredictionDoc.getDouble("sleepHours");
+        Double stressLevel = currentPredictionDoc.getDouble("stressLevel");
+
+        if (attendance == null || studyHours == null) {
+            android.widget.Toast.makeText(this, "Detailed insights are not available for older predictions.", android.widget.Toast.LENGTH_LONG).show();
+            return;
+        }
+
+        com.google.android.material.bottomsheet.BottomSheetDialog bottomSheetDialog = new com.google.android.material.bottomsheet.BottomSheetDialog(this);
+        View view = getLayoutInflater().inflate(R.layout.dialog_prediction_insights, null);
+        bottomSheetDialog.setContentView(view);
+        
+        View bottomSheet = bottomSheetDialog.findViewById(com.google.android.material.R.id.design_bottom_sheet);
+        if (bottomSheet != null) {
+            bottomSheet.setBackgroundResource(android.R.color.transparent);
+        }
+
+        TextView tvAttendanceTitle = view.findViewById(R.id.tvAttendanceTitle);
+        TextView tvAttendanceDesc = view.findViewById(R.id.tvAttendanceDesc);
+        android.widget.LinearLayout llAttendanceBg = view.findViewById(R.id.llAttendanceBg);
+
+        TextView tvStudyTitle = view.findViewById(R.id.tvStudyTitle);
+        TextView tvStudyDesc = view.findViewById(R.id.tvStudyDesc);
+        android.widget.LinearLayout llStudyBg = view.findViewById(R.id.llStudyBg);
+
+        TextView tvSleepTitle = view.findViewById(R.id.tvSleepTitle);
+        TextView tvSleepDesc = view.findViewById(R.id.tvSleepDesc);
+        android.widget.LinearLayout llSleepBg = view.findViewById(R.id.llSleepBg);
+
+        TextView tvStressTitle = view.findViewById(R.id.tvStressTitle);
+        TextView tvStressDesc = view.findViewById(R.id.tvStressDesc);
+        android.widget.LinearLayout llStressBg = view.findViewById(R.id.llStressBg);
+
+        androidx.appcompat.widget.AppCompatButton btnClose = view.findViewById(R.id.btnCloseInsights);
+        btnClose.setOnClickListener(v -> bottomSheetDialog.dismiss());
+
+        // Helper to set background colors securely
+        int colorGreen = Color.parseColor("#E8F5E9");
+        int colorYellow = Color.parseColor("#FFFDE7");
+        int colorRed = Color.parseColor("#FFEBEE");
+
+        // 1. Attendance
+        tvAttendanceTitle.setText("Attendance: " + attendance + "%");
+        if (attendance >= 90) {
+            tvAttendanceDesc.setText("Excellent! This is heavily boosting your predicted GPA.");
+            llAttendanceBg.setBackgroundColor(colorGreen);
+        } else if (attendance >= 80) {
+            tvAttendanceDesc.setText("Good, but improving attendance will secure a higher GPA.");
+            llAttendanceBg.setBackgroundColor(colorYellow);
+        } else {
+            tvAttendanceDesc.setText("Critical Warning! Attendance below 80% drastically lowers your predicted GPA.");
+            llAttendanceBg.setBackgroundColor(colorRed);
+        }
+
+        // 2. Study Time
+        tvStudyTitle.setText("Study Time: " + studyHours + "h/week");
+        if (studyHours >= 25) {
+            tvStudyDesc.setText("Great effort! Your hard work is pushing your prediction higher.");
+            llStudyBg.setBackgroundColor(colorGreen);
+        } else if (studyHours >= 15) {
+            tvStudyDesc.setText("Moderate effort. Increasing study time will directly improve your grade.");
+            llStudyBg.setBackgroundColor(colorYellow);
+        } else {
+            tvStudyDesc.setText("Too low! The AI expects a GPA drop unless you dedicate more time.");
+            llStudyBg.setBackgroundColor(colorRed);
+        }
+
+        // 3. Sleep
+        tvSleepTitle.setText("Sleep: " + sleepHours + "h/day");
+        if (sleepHours >= 7) {
+            tvSleepDesc.setText("Healthy sleep habits are keeping your brain sharp.");
+            llSleepBg.setBackgroundColor(colorGreen);
+        } else {
+            tvSleepDesc.setText("Lack of sleep limits your learning efficiency.");
+            llSleepBg.setBackgroundColor(colorYellow);
+        }
+
+        // 4. Stress
+        tvStressTitle.setText("Stress Level: " + stressLevel + "/5");
+        if (stressLevel <= 2) {
+            tvStressDesc.setText("Low stress is helping you focus.");
+            llStressBg.setBackgroundColor(colorGreen);
+        } else {
+            tvStressDesc.setText("High stress is negatively impacting your prediction. Try to manage it!");
+            llStressBg.setBackgroundColor(colorRed);
+        }
+
+        bottomSheetDialog.show();
     }
 
     private void setupBottomNavigation() {

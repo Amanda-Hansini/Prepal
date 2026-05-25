@@ -31,7 +31,7 @@ import java.util.List;
 public class ManageModulesActivity extends AppCompatActivity {
 
     private ImageView ivBack;
-    private Spinner spinnerModules, spinnerDegreeFilter, spinnerBatchFilter, spinnerDegreeForm, spinnerBatchForm, spinnerSemesterForm;
+    private Spinner spinnerModules, spinnerDegreeFilter, spinnerBatchFilter, spinnerSemesterFilter, spinnerDegreeForm, spinnerBatchForm, spinnerSemesterForm;
     private LinearLayout llModuleDetails;
     private TextView tvSelectedBatchId, tvSelectedDegreeId, tvSelectedSemesterId, tvSelectedModuleId, tvSelectedModuleName, tvSelectedCredits, tvSelectModuleLabel;
     private AppCompatButton btnToggleAddModule, btnUploadCsvModules, btnSaveModule, btnEditModule, btnDeleteModule;
@@ -49,6 +49,11 @@ public class ManageModulesActivity extends AppCompatActivity {
 
     private List<String> degreeList = new ArrayList<>();
     private List<String> batchList = new ArrayList<>();
+    private List<String> allBatchesList = new ArrayList<>();
+    private Map<String, String> batchToDegreeMap = new HashMap<>();
+    private Map<String, String> batchDocPathToBatchIdMap = new HashMap<>();
+    private List<String> allModuleBatchesList = new ArrayList<>();
+    private List<String> currentBatchFilterList = new ArrayList<>();
 
     @Override
     protected void onCreate(Bundle savedInstanceState) {
@@ -57,8 +62,6 @@ public class ManageModulesActivity extends AppCompatActivity {
 
         initViews();
         loadInitialData();
-        loadModules();
-        setupListeners();
     }
 
     private void initViews() {
@@ -66,6 +69,7 @@ public class ManageModulesActivity extends AppCompatActivity {
         spinnerModules = findViewById(R.id.spinnerModules);
         spinnerDegreeFilter = findViewById(R.id.spinnerDegreeFilter);
         spinnerBatchFilter = findViewById(R.id.spinnerBatchFilter);
+        spinnerSemesterFilter = findViewById(R.id.spinnerSemesterFilter);
         
         spinnerDegreeForm = findViewById(R.id.spinnerDegreeForm);
         spinnerBatchForm = findViewById(R.id.spinnerBatchForm);
@@ -98,7 +102,7 @@ public class ManageModulesActivity extends AppCompatActivity {
     private void loadInitialData() {
         FirebaseFirestore db = FirebaseFirestore.getInstance();
         
-        // Load Degrees
+        // Step 1: Load Degrees
         db.collection("Degrees").get().addOnSuccessListener(snapshots -> {
             degreeList.clear();
             degreeList.add("Select Degree");
@@ -107,21 +111,40 @@ public class ManageModulesActivity extends AppCompatActivity {
             }
             ArrayAdapter<String> adapter = new ArrayAdapter<>(this, R.layout.spinner_item, degreeList);
             adapter.setDropDownViewResource(R.layout.spinner_dropdown_item);
-            spinnerDegreeFilter.setAdapter(adapter);
             spinnerDegreeForm.setAdapter(adapter);
-        });
 
-        // Load Batches
-        db.collection("Batches").get().addOnSuccessListener(snapshots -> {
-            batchList.clear();
-            batchList.add("Select Batch");
-            for (com.google.firebase.firestore.DocumentSnapshot doc : snapshots) {
-                batchList.add(doc.getId());
-            }
-            ArrayAdapter<String> adapter = new ArrayAdapter<>(this, R.layout.spinner_item, batchList);
-            adapter.setDropDownViewResource(R.layout.spinner_dropdown_item);
-            spinnerBatchFilter.setAdapter(adapter);
-            spinnerBatchForm.setAdapter(adapter);
+            // Step 2: Load Batches inside Degrees success listener
+            db.collection("Batches").get().addOnSuccessListener(batchSnaps -> {
+                batchList.clear();
+                batchList.add("Select Batch");
+                allBatchesList.clear();
+                batchToDegreeMap.clear();
+                batchDocPathToBatchIdMap.clear();
+                for (com.google.firebase.firestore.DocumentSnapshot doc : batchSnaps) {
+                    String bId = doc.getId();
+                    String realBatchId = doc.getString("batchId");
+                    String pId = doc.getString("programId");
+                    batchList.add(bId);
+                    allBatchesList.add(bId);
+                    if (pId != null) {
+                        batchToDegreeMap.put(bId, pId);
+                    }
+                    if (realBatchId != null) {
+                        batchDocPathToBatchIdMap.put(bId, realBatchId);
+                    }
+                }
+                ArrayAdapter<String> batchAdapter = new ArrayAdapter<>(this, R.layout.spinner_item, batchList);
+                batchAdapter.setDropDownViewResource(R.layout.spinner_dropdown_item);
+                spinnerBatchForm.setAdapter(batchAdapter);
+
+                // Step 3: Now load modules and setup listeners sequentially!
+                loadModules();
+                setupListeners();
+            }).addOnFailureListener(e -> {
+                Toast.makeText(this, "Failed to load batches metadata", Toast.LENGTH_SHORT).show();
+            });
+        }).addOnFailureListener(e -> {
+            Toast.makeText(this, "Failed to load degrees metadata", Toast.LENGTH_SHORT).show();
         });
     }
 
@@ -134,15 +157,26 @@ public class ManageModulesActivity extends AppCompatActivity {
             return;
         }
 
+        String realBatchId = batchDocPathToBatchIdMap.get(batch);
+        if (realBatchId == null) {
+            realBatchId = batch;
+        }
+
+        final String finalRealBatchId = realBatchId;
         FirebaseFirestore db = FirebaseFirestore.getInstance();
-        db.collection("Semesters").document(degree)
-                .collection("Batches").document(batch)
-                .collection("Semester IDs").get()
+        db.collection("Degrees").document(degree)
+                .collection("Semesters").get()
                 .addOnSuccessListener(queryDocumentSnapshots -> {
                     List<String> semesters = new ArrayList<>();
                     semesters.add("Select Semester");
                     for (com.google.firebase.firestore.DocumentSnapshot doc : queryDocumentSnapshots) {
-                        semesters.add(doc.getId());
+                        String bId = doc.getString("batchId");
+                        String sId = doc.getString("semesterId");
+                        if (bId != null && sId != null) {
+                            if (bId.equalsIgnoreCase(finalRealBatchId) || bId.equalsIgnoreCase(batch)) {
+                                semesters.add(sId);
+                            }
+                        }
                     }
                     updateSemesterFormSpinner(semesters);
                 });
@@ -162,39 +196,149 @@ public class ManageModulesActivity extends AppCompatActivity {
         moduleList = new ArrayList<>();
         
         FirebaseFirestore db = FirebaseFirestore.getInstance();
-        db.collectionGroup("Module IDs").get()
-                .addOnSuccessListener(queryDocumentSnapshots -> {
-                    allModulesList.clear();
-                    java.util.Set<String> degrees = new java.util.TreeSet<>();
-                    java.util.Set<String> batches = new java.util.TreeSet<>();
+        
+        // Fetch from Location A (Web style): subcollections named "Modules"
+        db.collectionGroup("Modules").get()
+                .addOnSuccessListener(webSnaps -> {
+                    List<Module> tempCombined = new ArrayList<>();
                     
-                    for (com.google.firebase.firestore.DocumentSnapshot doc : queryDocumentSnapshots) {
+                    // Process Location A modules
+                    for (com.google.firebase.firestore.DocumentSnapshot doc : webSnaps) {
                         String bId = doc.getString("batchId");
                         String dId = doc.getString("degreeId");
                         String sId = doc.getString("semesterId");
                         String mId = doc.getString("moduleId");
+                        if (mId == null) {
+                            mId = doc.getString("moduleCode");
+                        }
                         String mName = doc.getString("moduleName");
-                        String creds = doc.getString("credits");
+                        Object credsObj = doc.get("credits");
+                        String creds = credsObj != null ? String.valueOf(credsObj) : "0";
                         
                         if (mId != null && mName != null) {
                             Module m = new Module(
                                 bId != null ? bId : "N/A",
                                 dId != null ? dId : "N/A",
                                 sId != null ? sId : "N/A",
-                                mId, mName,
-                                creds != null ? creds : "0"
+                                mId, mName, creds
                             );
-                            allModulesList.add(m);
-                            if (dId != null && !dId.trim().isEmpty()) degrees.add(dId.trim());
-                            if (bId != null && !bId.trim().isEmpty()) batches.add(bId.trim());
+                            tempCombined.add(m);
                         }
                     }
                     
-                    setupFilterSpinners(degrees, batches);
+                    // Now fetch from Location B (Legacy/Mobile style): subcollections named "Module IDs"
+                    db.collectionGroup("Module IDs").get()
+                            .addOnSuccessListener(mobSnaps -> {
+                                for (com.google.firebase.firestore.DocumentSnapshot doc : mobSnaps) {
+                                    String bId = doc.getString("batchId");
+                                    String dId = doc.getString("degreeId");
+                                    String sId = doc.getString("semesterId");
+                                    String mId = doc.getString("moduleId");
+                                    if (mId == null) {
+                                        mId = doc.getString("moduleCode");
+                                    }
+                                    String mName = doc.getString("moduleName");
+                                    Object credsObj = doc.get("credits");
+                                    String creds = credsObj != null ? String.valueOf(credsObj) : "0";
+                                    
+                                    if (mId != null && mName != null) {
+                                        Module m = new Module(
+                                            bId != null ? bId : "N/A",
+                                            dId != null ? dId : "N/A",
+                                            sId != null ? sId : "N/A",
+                                            mId, mName, creds
+                                        );
+                                        
+                                        // Avoid duplicate entries
+                                        boolean duplicate = false;
+                                        for (Module existing : tempCombined) {
+                                            if (existing.getModuleId().equalsIgnoreCase(m.getModuleId()) &&
+                                                existing.getDegreeId().equalsIgnoreCase(m.getDegreeId()) &&
+                                                existing.getBatchId().equalsIgnoreCase(m.getBatchId()) &&
+                                                existing.getSemesterId().equalsIgnoreCase(m.getSemesterId())) {
+                                                duplicate = true;
+                                                break;
+                                            }
+                                        }
+                                        if (!duplicate) {
+                                            tempCombined.add(m);
+                                        }
+                                    }
+                                }
+                                
+                                allModulesList.clear();
+                                allModulesList.addAll(tempCombined);
+                                
+                                java.util.Set<String> degrees = new java.util.TreeSet<>();
+                                java.util.Set<String> batches = new java.util.TreeSet<>();
+                                for (Module m : allModulesList) {
+                                    if (m.getDegreeId() != null && !m.getDegreeId().trim().isEmpty()) {
+                                        degrees.add(m.getDegreeId().trim());
+                                    }
+                                    if (m.getBatchId() != null && !m.getBatchId().trim().isEmpty()) {
+                                        batches.add(m.getBatchId().trim());
+                                    }
+                                }
+                                setupFilterSpinners(degrees, batches);
+                            })
+                            .addOnFailureListener(e -> {
+                                Toast.makeText(this, "Failed to load legacy modules: " + e.getMessage(), Toast.LENGTH_SHORT).show();
+                            });
                 })
                 .addOnFailureListener(e -> {
                     Toast.makeText(this, "Failed to load modules: " + e.getMessage(), Toast.LENGTH_SHORT).show();
                 });
+    }
+
+    private void updateBatchFilterDropdown(String selectedDegree) {
+        String currentSelectedBatch = spinnerBatchFilter.getSelectedItem() != null ? 
+                spinnerBatchFilter.getSelectedItem().toString() : "All Batches";
+
+        currentBatchFilterList.clear();
+        currentBatchFilterList.add("All Batches");
+
+        for (String bId : allModuleBatchesList) {
+            // Find corresponding degree ID for bId (which can be a display batch ID or a short batch ID)
+            String resolvedDegreeId = null;
+            
+            // 1. Try directly (if it is a display batch ID)
+            resolvedDegreeId = batchToDegreeMap.get(bId);
+            
+            // 2. If null, try to resolve from short ID to display path
+            if (resolvedDegreeId == null) {
+                String displayPath = null;
+                for (Map.Entry<String, String> entry : batchDocPathToBatchIdMap.entrySet()) {
+                    if (entry.getValue().equalsIgnoreCase(bId)) {
+                        displayPath = entry.getKey();
+                        break;
+                    }
+                }
+                if (displayPath != null) {
+                    resolvedDegreeId = batchToDegreeMap.get(displayPath);
+                }
+            }
+
+            // 3. Fallback: if still null, check if bId contains the selectedDegree name (e.g. "BIT" in "BIT(Batch 05)")
+            if (resolvedDegreeId == null && selectedDegree != null && !selectedDegree.equals("All Degrees")) {
+                if (bId.toLowerCase().contains(selectedDegree.toLowerCase())) {
+                    resolvedDegreeId = selectedDegree;
+                }
+            }
+
+            if (selectedDegree.equals("All Degrees") || (resolvedDegreeId != null && resolvedDegreeId.equalsIgnoreCase(selectedDegree))) {
+                currentBatchFilterList.add(bId);
+            }
+        }
+
+        ArrayAdapter<String> batchAdapter = new ArrayAdapter<>(this, R.layout.spinner_item, currentBatchFilterList);
+        batchAdapter.setDropDownViewResource(R.layout.spinner_dropdown_item);
+        spinnerBatchFilter.setAdapter(batchAdapter);
+
+        if (currentBatchFilterList.contains(currentSelectedBatch)) {
+            setSpinnerValue(spinnerBatchFilter, currentSelectedBatch);
+        } else {
+            spinnerBatchFilter.setSelection(0);
+        }
     }
 
     private void setupFilterSpinners(java.util.Set<String> degrees, java.util.Set<String> batches) {
@@ -206,25 +350,100 @@ public class ManageModulesActivity extends AppCompatActivity {
         degAdapter.setDropDownViewResource(R.layout.spinner_dropdown_item);
         spinnerDegreeFilter.setAdapter(degAdapter);
         
-        List<String> batchFilterList = new ArrayList<>();
-        batchFilterList.add("All Batches");
-        batchFilterList.addAll(batches);
-        
-        ArrayAdapter<String> batchAdapter = new ArrayAdapter<>(this, R.layout.spinner_item, batchFilterList);
-        batchAdapter.setDropDownViewResource(R.layout.spinner_dropdown_item);
-        spinnerBatchFilter.setAdapter(batchAdapter);
+        allModuleBatchesList.clear();
+        allModuleBatchesList.addAll(batches);
 
-        AdapterView.OnItemSelectedListener filterListener = new AdapterView.OnItemSelectedListener() {
+        spinnerDegreeFilter.setOnItemSelectedListener(new AdapterView.OnItemSelectedListener() {
+            @Override
+            public void onItemSelected(AdapterView<?> parent, View view, int position, long id) {
+                String selectedDegree = spinnerDegreeFilter.getSelectedItem().toString();
+                updateBatchFilterDropdown(selectedDegree);
+                loadSemestersForFilter();
+            }
+
+            @Override
+            public void onNothingSelected(AdapterView<?> parent) {}
+        });
+
+        // Initialize with default update
+        updateBatchFilterDropdown("All Degrees");
+
+        spinnerBatchFilter.setOnItemSelectedListener(new AdapterView.OnItemSelectedListener() {
+            @Override
+            public void onItemSelected(AdapterView<?> parent, View view, int position, long id) {
+                loadSemestersForFilter();
+            }
+
+            @Override
+            public void onNothingSelected(AdapterView<?> parent) {}
+        });
+
+        List<String> sems = new ArrayList<>();
+        sems.add("All Semesters");
+        updateSemesterFilterDropdown(sems);
+
+        spinnerSemesterFilter.setOnItemSelectedListener(new AdapterView.OnItemSelectedListener() {
             @Override
             public void onItemSelected(AdapterView<?> parent, View view, int position, long id) {
                 applyFilters();
             }
+
             @Override
             public void onNothingSelected(AdapterView<?> parent) {}
-        };
-        
-        spinnerDegreeFilter.setOnItemSelectedListener(filterListener);
-        spinnerBatchFilter.setOnItemSelectedListener(filterListener);
+        });
+    }
+
+    private void loadSemestersForFilter() {
+        String degree = spinnerDegreeFilter.getSelectedItem() != null ? spinnerDegreeFilter.getSelectedItem().toString() : "";
+        String batch = spinnerBatchFilter.getSelectedItem() != null ? spinnerBatchFilter.getSelectedItem().toString() : "";
+
+        if (degree.equals("All Degrees") || degree.equals("Select Degree") || batch.equals("All Batches") || batch.equals("Select Batch")) {
+            List<String> sems = new ArrayList<>();
+            sems.add("All Semesters");
+            updateSemesterFilterDropdown(sems);
+            applyFilters();
+            return;
+        }
+
+        String realBatchId = batchDocPathToBatchIdMap.get(batch);
+        if (realBatchId == null) {
+            realBatchId = batch;
+        }
+
+        final String finalRealBatchId = realBatchId;
+        FirebaseFirestore db = FirebaseFirestore.getInstance();
+        db.collection("Degrees").document(degree)
+                .collection("Semesters").get()
+                .addOnSuccessListener(queryDocumentSnapshots -> {
+                    List<String> semesters = new ArrayList<>();
+                    semesters.add("All Semesters");
+                    for (com.google.firebase.firestore.DocumentSnapshot doc : queryDocumentSnapshots) {
+                        String bId = doc.getString("batchId");
+                        String sId = doc.getString("semesterId");
+                        if (bId != null && sId != null) {
+                            if (bId.equalsIgnoreCase(finalRealBatchId) || bId.equalsIgnoreCase(batch)) {
+                                semesters.add(sId);
+                            }
+                        }
+                    }
+                    updateSemesterFilterDropdown(semesters);
+                    applyFilters();
+                })
+                .addOnFailureListener(e -> {
+                    List<String> sems = new ArrayList<>();
+                    sems.add("All Semesters");
+                    updateSemesterFilterDropdown(sems);
+                    applyFilters();
+                });
+    }
+
+    private void updateSemesterFilterDropdown(List<String> semesters) {
+        if (semesters.isEmpty()) {
+            semesters.add("All Semesters");
+        }
+        ArrayAdapter<String> adapter = new ArrayAdapter<>(this, R.layout.spinner_item, semesters);
+        adapter.setDropDownViewResource(R.layout.spinner_dropdown_item);
+        spinnerSemesterFilter.setAdapter(adapter);
     }
 
     private void applyFilters() {
@@ -232,9 +451,11 @@ public class ManageModulesActivity extends AppCompatActivity {
 
         Object degObj = spinnerDegreeFilter.getSelectedItem();
         Object batchObj = spinnerBatchFilter.getSelectedItem();
+        Object semObj = spinnerSemesterFilter.getSelectedItem();
         
         String selectedDeg = degObj != null ? degObj.toString() : "All Degrees";
         String selectedBatch = batchObj != null ? batchObj.toString() : "All Batches";
+        String selectedSem = semObj != null ? semObj.toString() : "All Semesters";
         
         moduleList.clear();
         List<String> moduleNames = new ArrayList<>();
@@ -242,9 +463,17 @@ public class ManageModulesActivity extends AppCompatActivity {
         
         for (Module m : allModulesList) {
             boolean degMatch = selectedDeg.equals("All Degrees") || (m.getDegreeId() != null && m.getDegreeId().equalsIgnoreCase(selectedDeg));
-            boolean batchMatch = selectedBatch.equals("All Batches") || (m.getBatchId() != null && m.getBatchId().equalsIgnoreCase(selectedBatch));
             
-            if (degMatch && batchMatch) {
+            String realBatchId = batchDocPathToBatchIdMap.get(selectedBatch);
+            if (realBatchId == null) {
+                realBatchId = selectedBatch;
+            }
+            boolean batchMatch = selectedBatch.equals("All Batches") || 
+                                 (m.getBatchId() != null && (m.getBatchId().equalsIgnoreCase(realBatchId) || m.getBatchId().equalsIgnoreCase(selectedBatch)));
+            
+            boolean semMatch = selectedSem.equals("All Semesters") || (m.getSemesterId() != null && m.getSemesterId().equalsIgnoreCase(selectedSem));
+            
+            if (degMatch && batchMatch && semMatch) {
                 moduleList.add(m);
                 moduleNames.add(m.getModuleId() + " - " + m.getModuleName());
             }
@@ -307,6 +536,21 @@ public class ManageModulesActivity extends AppCompatActivity {
             spinnerSemesterForm.setEnabled(true);
             etModuleId.setEnabled(true);
             
+            // Pre-populate degree and batch from active filters if selected
+            String selectedDegree = spinnerDegreeFilter.getSelectedItem() != null ? spinnerDegreeFilter.getSelectedItem().toString() : "All Degrees";
+            String selectedBatch = spinnerBatchFilter.getSelectedItem() != null ? spinnerBatchFilter.getSelectedItem().toString() : "All Batches";
+            
+            if (!selectedDegree.equals("All Degrees")) {
+                setSpinnerValue(spinnerDegreeForm, selectedDegree);
+            } else {
+                spinnerDegreeForm.setSelection(0);
+            }
+            if (!selectedBatch.equals("All Batches")) {
+                setSpinnerValue(spinnerBatchForm, selectedBatch);
+            } else {
+                spinnerBatchForm.setSelection(0);
+            }
+
             cardAddModuleForm.setVisibility(View.VISIBLE);
             btnToggleAddModule.setVisibility(View.GONE);
         });
@@ -318,7 +562,18 @@ public class ManageModulesActivity extends AppCompatActivity {
                 
                 setSpinnerValue(spinnerDegreeForm, currentlySelectedModule.getDegreeId());
                 spinnerDegreeForm.setEnabled(false); // disable ID edit
-                setSpinnerValue(spinnerBatchForm, currentlySelectedModule.getBatchId());
+                
+                String docPath = null;
+                for (Map.Entry<String, String> entry : batchDocPathToBatchIdMap.entrySet()) {
+                    if (entry.getValue().equalsIgnoreCase(currentlySelectedModule.getBatchId())) {
+                        docPath = entry.getKey();
+                        break;
+                    }
+                }
+                if (docPath == null) {
+                    docPath = currentlySelectedModule.getBatchId();
+                }
+                setSpinnerValue(spinnerBatchForm, docPath);
                 spinnerBatchForm.setEnabled(false); // disable ID edit
                 
                 // Need to load semesters for this degree/batch before setting the value
@@ -348,13 +603,34 @@ public class ManageModulesActivity extends AppCompatActivity {
                         .setTitle("Delete Module")
                         .setMessage("Are you sure you want to delete this module?")
                         .setPositiveButton("Yes", (dialog, which) -> {
-                            String parentDocId = currentlySelectedModule.getBatchId() + "_" + currentlySelectedModule.getDegreeId() + "_" + currentlySelectedModule.getSemesterId();
+                            String degreeId = currentlySelectedModule.getDegreeId();
+                            String realBatchId = currentlySelectedModule.getBatchId();
+                            String semesterId = currentlySelectedModule.getSemesterId();
+                            String moduleId = currentlySelectedModule.getModuleId();
+
+                            // Delete from Location A (Web style)
+                            String finalBatchDocPath = null;
+                            for (Map.Entry<String, String> entry : batchDocPathToBatchIdMap.entrySet()) {
+                                if (entry.getValue().equalsIgnoreCase(realBatchId)) {
+                                    finalBatchDocPath = entry.getKey();
+                                    break;
+                                }
+                            }
+                            if (finalBatchDocPath == null) {
+                                finalBatchDocPath = degreeId + "(" + realBatchId + ")";
+                            }
+                            String webModDocId = finalBatchDocPath + "_" + semesterId + "_" + moduleId;
                             FirebaseFirestore db = FirebaseFirestore.getInstance();
+                            db.collection("Degrees").document(degreeId)
+                                    .collection("Modules").document(webModDocId).delete();
+
+                            // Delete from Location B (Mobile style)
+                            String parentDocId = realBatchId + "_" + degreeId + "_" + semesterId;
                             db.collection("Modules").document(parentDocId)
-                                    .collection("Module IDs").document(currentlySelectedModule.getModuleId())
+                                    .collection("Module IDs").document(moduleId)
                                     .delete()
                                     .addOnSuccessListener(aVoid -> {
-                                        ActivityLogger.logAction(this, "Deleted Module", "ID: " + currentlySelectedModule.getModuleId() + ", Batch: " + currentlySelectedModule.getBatchId());
+                                        ActivityLogger.logAction(this, "Deleted Module", "ID: " + moduleId + ", Batch: " + realBatchId);
                                         Toast.makeText(this, "Module deleted", Toast.LENGTH_SHORT).show();
                                         loadModules();
                                         closeAddModuleForm();
@@ -384,16 +660,46 @@ public class ManageModulesActivity extends AppCompatActivity {
             Toast.makeText(this, "Saving Module...", Toast.LENGTH_SHORT).show();
             btnSaveModule.setEnabled(false);
 
+            String realBatchId = batchDocPathToBatchIdMap.get(batchId);
+            if (realBatchId == null) {
+                realBatchId = batchId;
+            }
+
             FirebaseFirestore db = FirebaseFirestore.getInstance();
             Map<String, Object> moduleData = new HashMap<>();
-            moduleData.put("batchId", batchId);
+            moduleData.put("batchId", realBatchId);
             moduleData.put("degreeId", degreeId);
             moduleData.put("semesterId", semesterId);
             moduleData.put("moduleId", moduleId);
             moduleData.put("moduleName", moduleName);
             moduleData.put("credits", credits);
 
-            String parentDocId = batchId + "_" + degreeId + "_" + semesterId;
+            // Location A: Dual write to Web-style path
+            String finalBatchDocPath = null;
+            for (Map.Entry<String, String> entry : batchDocPathToBatchIdMap.entrySet()) {
+                if (entry.getValue().equalsIgnoreCase(realBatchId)) {
+                    finalBatchDocPath = entry.getKey();
+                    break;
+                }
+            }
+            if (finalBatchDocPath == null) {
+                finalBatchDocPath = degreeId + "(" + realBatchId + ")";
+            }
+
+            String webModDocId = finalBatchDocPath + "_" + semesterId + "_" + moduleId;
+            Map<String, Object> webModMap = new HashMap<>();
+            webModMap.put("degreeId", degreeId);
+            webModMap.put("batchId", realBatchId);
+            webModMap.put("semesterId", semesterId);
+            webModMap.put("moduleId", moduleId);
+            webModMap.put("moduleCode", moduleId);
+            webModMap.put("moduleName", moduleName);
+            webModMap.put("credits", credits);
+
+            db.collection("Degrees").document(degreeId).collection("Modules").document(webModDocId).set(webModMap);
+
+            // Location B: Write to Mobile-style path
+            String parentDocId = realBatchId + "_" + degreeId + "_" + semesterId;
 
             db.collection("Modules").document(parentDocId)
                     .collection("Module IDs").document(moduleId)
@@ -414,15 +720,26 @@ public class ManageModulesActivity extends AppCompatActivity {
     }
 
     private void loadSemestersForFormWithCallback(String degree, String batch, Runnable callback) {
+        String realBatchId = batchDocPathToBatchIdMap.get(batch);
+        if (realBatchId == null) {
+            realBatchId = batch;
+        }
+        final String finalRealBatchId = realBatchId;
+
         FirebaseFirestore db = FirebaseFirestore.getInstance();
-        db.collection("Semesters").document(degree)
-                .collection("Batches").document(batch)
-                .collection("Semester IDs").get()
+        db.collection("Degrees").document(degree)
+                .collection("Semesters").get()
                 .addOnSuccessListener(queryDocumentSnapshots -> {
                     List<String> semesters = new ArrayList<>();
                     semesters.add("Select Semester");
                     for (com.google.firebase.firestore.DocumentSnapshot doc : queryDocumentSnapshots) {
-                        semesters.add(doc.getId());
+                        String bId = doc.getString("batchId");
+                        String sId = doc.getString("semesterId");
+                        if (bId != null && sId != null) {
+                            if (bId.equalsIgnoreCase(finalRealBatchId) || bId.equalsIgnoreCase(batch)) {
+                                semesters.add(sId);
+                            }
+                        }
                     }
                     updateSemesterFormSpinner(semesters);
                     callback.run();

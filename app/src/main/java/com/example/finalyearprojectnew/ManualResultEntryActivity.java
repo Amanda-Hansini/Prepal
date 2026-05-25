@@ -36,7 +36,7 @@ public class ManualResultEntryActivity extends AppCompatActivity {
     private List<SemesterInfo> semesterList = new ArrayList<>();
     private List<ModuleData> availableModules = new ArrayList<>();
 
-    private String[] grades = {"Select Grade", "A+", "A", "A-", "B+", "B", "B-", "C+", "C", "C-", "D+", "D", "F", "AB", "MC", "NE"};
+    private String[] grades = {"Select Grade", "A+", "A", "A-", "B+", "B", "B-", "C+", "C", "C-", "D+", "D", "F", "AB", "MC", "NE", "WH", "INC"};
     private Map<String, Double> gradePoints = new HashMap<>();
 
     private boolean isEditMode = false;
@@ -150,6 +150,8 @@ public class ManualResultEntryActivity extends AppCompatActivity {
         gradePoints.put("AB", 0.00);
         gradePoints.put("MC", 0.00);
         gradePoints.put("NE", 0.00);
+        gradePoints.put("WH", 0.00);
+        gradePoints.put("INC", 0.00);
     }
 
     private void initViews() {
@@ -189,6 +191,68 @@ public class ManualResultEntryActivity extends AppCompatActivity {
     }
 
     private void loadInitialData() {
+        db.collection("AllStudents").document(studentId).get()
+                .addOnSuccessListener(studentDoc -> {
+                    if (studentDoc.exists()) {
+                        String studentBatchId = studentDoc.getString("batchId");
+                        if (studentBatchId != null && !studentBatchId.isEmpty()) {
+                            // Query Batches collection to find the batch where batchId matches
+                            db.collection("Batches")
+                                    .whereEqualTo("batchId", studentBatchId)
+                                    .get()
+                                    .addOnSuccessListener(batchSnapshots -> {
+                                        if (!batchSnapshots.isEmpty()) {
+                                            com.google.firebase.firestore.DocumentSnapshot batchDoc = batchSnapshots.getDocuments().get(0);
+                                            String batchDocId = batchDoc.getId(); // programId(batchName)
+                                            String batchName = batchDoc.getString("batchName");
+                                            String degreeId = batchDoc.getString("programId");
+
+                                            if (degreeId != null) {
+                                                // Fetch Degree full name
+                                                db.collection("Degrees").document(degreeId).get()
+                                                        .addOnSuccessListener(degreeDoc -> {
+                                                            String degreeName = degreeDoc.exists() ? degreeDoc.getString("name") : degreeId;
+                                                            
+                                                            // Populate and pre-select single Degree
+                                                            degreeList.clear();
+                                                            degreeList.add(new DegreeInfo(degreeId, degreeName));
+                                                            List<String> degDisplay = new ArrayList<>();
+                                                            degDisplay.add("Select Degree");
+                                                            degDisplay.add(degreeId + " - " + degreeName);
+                                                            ArrayAdapter<String> degAdapter = new ArrayAdapter<>(this, R.layout.spinner_item, degDisplay);
+                                                            degAdapter.setDropDownViewResource(R.layout.spinner_dropdown_item);
+                                                            spinnerDegree.setAdapter(degAdapter);
+                                                            spinnerDegree.setSelection(1); // Auto-select the resolved degree
+                                                            spinnerDegree.setEnabled(false); // Lock it!
+
+                                                            // Populate and pre-select single Batch
+                                                            batchList.clear();
+                                                            batchList.add(new BatchInfo(batchDocId, batchName));
+                                                            List<String> batchDisplay = new ArrayList<>();
+                                                            batchDisplay.add("Select Batch");
+                                                            batchDisplay.add(batchDocId + " - " + batchName);
+                                                            ArrayAdapter<String> batchAdapter = new ArrayAdapter<>(this, R.layout.spinner_item, batchDisplay);
+                                                            batchAdapter.setDropDownViewResource(R.layout.spinner_dropdown_item);
+                                                            spinnerBatch.setAdapter(batchAdapter);
+                                                            spinnerBatch.setSelection(1); // Auto-select the resolved batch
+                                                            spinnerBatch.setEnabled(false); // Lock it!
+                                                        })
+                                                        .addOnFailureListener(e -> loadAllDegreesAndBatches());
+                                                return;
+                                            }
+                                        }
+                                        loadAllDegreesAndBatches();
+                                    })
+                                    .addOnFailureListener(e -> loadAllDegreesAndBatches());
+                            return;
+                        }
+                    }
+                    loadAllDegreesAndBatches();
+                })
+                .addOnFailureListener(e -> loadAllDegreesAndBatches());
+    }
+
+    private void loadAllDegreesAndBatches() {
         // Load Degrees
         db.collection("Degrees").get().addOnSuccessListener(queryDocumentSnapshots -> {
             degreeList.clear();
@@ -205,6 +269,7 @@ public class ManualResultEntryActivity extends AppCompatActivity {
             ArrayAdapter<String> adapter = new ArrayAdapter<>(this, R.layout.spinner_item, displayNames);
             adapter.setDropDownViewResource(R.layout.spinner_dropdown_item);
             spinnerDegree.setAdapter(adapter);
+            spinnerDegree.setEnabled(true);
         });
 
         // Load Batches
@@ -223,6 +288,7 @@ public class ManualResultEntryActivity extends AppCompatActivity {
             ArrayAdapter<String> adapter = new ArrayAdapter<>(this, R.layout.spinner_item, displayNames);
             adapter.setDropDownViewResource(R.layout.spinner_dropdown_item);
             spinnerBatch.setAdapter(adapter);
+            spinnerBatch.setEnabled(true);
         });
     }
 
@@ -351,6 +417,9 @@ public class ManualResultEntryActivity extends AppCompatActivity {
         double totalCreditHours = 0;
         double currentSemPoints = 0;
         double currentSemCredits = 0;
+        
+        boolean cumHasSpecial = false;
+        boolean semHasSpecial = false;
 
         List<Map<String, Object>> selectedResults = new ArrayList<>();
 
@@ -362,7 +431,10 @@ public class ManualResultEntryActivity extends AppCompatActivity {
             if (modules != null) {
                 for (Map<String, Object> m : modules) {
                     String g = (String) m.get("grade");
-                    if (g != null && (g.equals("MC") || g.equals("AB") || g.equals("NE"))) continue;
+                    if (g != null && (g.equals("MC") || g.equals("AB") || g.equals("NE") || g.equals("WH") || g.equals("INC"))) {
+                        cumHasSpecial = true;
+                        continue;
+                    }
 
                     double c = 0;
                     Object co = m.get("credits");
@@ -406,8 +478,12 @@ public class ManualResultEntryActivity extends AppCompatActivity {
             result.put("semester", currentSem);
             selectedResults.add(result);
 
-            // Deduct credits for MC, AB, NE (Don't count in divisor)
-            if (grade.equals("MC") || grade.equals("AB") || grade.equals("NE")) continue;
+            // Deduct credits for special grades (Don't count in divisor) and flag
+            if (grade.equals("MC") || grade.equals("AB") || grade.equals("NE") || grade.equals("WH") || grade.equals("INC")) {
+                semHasSpecial = true;
+                cumHasSpecial = true;
+                continue;
+            }
 
             currentSemPoints += (points * credits);
             currentSemCredits += credits;
@@ -416,17 +492,21 @@ public class ManualResultEntryActivity extends AppCompatActivity {
             totalCreditHours += credits;
         }
 
-        double currentGpa = currentSemCredits > 0 ? (currentSemPoints / currentSemCredits) : 0;
-        double cumulativeGpa = totalCreditHours > 0 ? (totalQualityPoints / totalCreditHours) : 0;
+        double currentGpa = semHasSpecial ? 0.0 : (currentSemCredits > 0 ? (currentSemPoints / currentSemCredits) : 0);
+        double cumulativeGpa = cumHasSpecial ? 0.0 : (totalCreditHours > 0 ? (totalQualityPoints / totalCreditHours) : 0);
         
-        showSummaryDialog(currentGpa, cumulativeGpa, selectedResults, currentSem);
+        showSummaryDialog(currentGpa, cumulativeGpa, selectedResults, currentSem, semHasSpecial, cumHasSpecial);
     }
 
-    private void showSummaryDialog(double currentGpa, double cumulativeGpa, List<Map<String, Object>> results, String semesterName) {
+    private void showSummaryDialog(double currentGpa, double cumulativeGpa, List<Map<String, Object>> results, String semesterName, boolean semHasSpecial, boolean cumHasSpecial) {
         android.app.AlertDialog.Builder builder = new android.app.AlertDialog.Builder(this);
         builder.setTitle("Result Summary");
-        String message = String.format("Semester: %s\n\nCurrent Semester GPA: %.2f\nCumulative GPA: %.2f\n\nProceed to Quiz for Future GPA Prediction?", 
-                semesterName, currentGpa, cumulativeGpa);
+        
+        String semGpaStr = semHasSpecial ? "N/A" : String.format(java.util.Locale.US, "%.2f", currentGpa);
+        String cumGpaStr = cumHasSpecial ? "N/A" : String.format(java.util.Locale.US, "%.2f", cumulativeGpa);
+        
+        String message = String.format("Semester: %s\n\nCurrent Semester GPA: %s\nCumulative GPA: %s\n\nProceed to Quiz for Future GPA Prediction?", 
+                semesterName, semGpaStr, cumGpaStr);
         builder.setMessage(message);
         builder.setPositiveButton("Proceed", (dialog, which) -> {
             // Proceed to Quiz Activity for lifestyle data

@@ -95,7 +95,7 @@
                 android:layout_width="wrap_content"
                 android:layout_height="wrap_content"
                 android:layout_marginTop="8dp"
-                android:text="View and modify pre-existing programs"
+                android:text="View and modify pre-existing programmes"
                 android:textColor="@color/textColorSecondary"
                 android:textSize="14sp"
                 app:layout_constraintStart_toStartOf="parent"
@@ -125,7 +125,7 @@
                     <TextView
                         android:layout_width="wrap_content"
                         android:layout_height="wrap_content"
-                        android:text="Select Degree Program"
+                        android:text="Select Programme"
                         android:textColor="@color/textColorPrimary"
                         android:textSize="16sp"
                         android:textStyle="bold" />
@@ -159,7 +159,7 @@
                         <TextView
                             android:layout_width="wrap_content"
                             android:layout_height="wrap_content"
-                            android:text="Program Details"
+                            android:text="Programme Details"
                             android:textColor="@color/textColorSecondary"
                             android:textSize="12sp" />
 
@@ -242,22 +242,39 @@
                 app:layout_constraintStart_toStartOf="parent"
                 app:layout_constraintTop_toBottomOf="@id/cardSelectDegree" />
 
+            <!-- Premium Setup Wizard Action -->
+            <androidx.appcompat.widget.AppCompatButton
+                android:id="@+id/btnLaunchWizard"
+                android:layout_width="match_parent"
+                android:layout_height="56dp"
+                android:layout_marginHorizontal="24dp"
+                android:layout_marginTop="24dp"
+                android:background="@drawable/bg_gradient_button"
+                android:text="⚡ Launch Setup Wizard (Recommended)"
+                android:textAllCaps="false"
+                android:textColor="@android:color/white"
+                android:textSize="16sp"
+                android:textStyle="bold"
+                app:layout_constraintEnd_toEndOf="parent"
+                app:layout_constraintStart_toStartOf="parent"
+                app:layout_constraintTop_toBottomOf="@id/tvOrSeparator" />
+
             <!-- Add New Program Action -->
             <androidx.appcompat.widget.AppCompatButton
                 android:id="@+id/btnToggleAddProgram"
                 android:layout_width="match_parent"
                 android:layout_height="56dp"
                 android:layout_marginHorizontal="24dp"
-                android:layout_marginTop="24dp"
+                android:layout_marginTop="12dp"
                 android:background="@drawable/bg_outline_button"
-                android:text="+ Add New Program"
+                android:text="+ Add Quick Programme"
                 android:textAllCaps="false"
                 android:textColor="@color/colorPrimary"
-                android:textSize="16sp"
+                android:textSize="15sp"
                 android:textStyle="bold"
                 app:layout_constraintEnd_toEndOf="parent"
                 app:layout_constraintStart_toStartOf="parent"
-                app:layout_constraintTop_toBottomOf="@id/tvOrSeparator" />
+                app:layout_constraintTop_toBottomOf="@id/btnLaunchWizard" />
 
             <!-- Add New Program Form (Inline Expansion) -->
             <androidx.cardview.widget.CardView
@@ -284,7 +301,7 @@
                         android:id="@+id/tvFormTitle"
                         android:layout_width="wrap_content"
                         android:layout_height="wrap_content"
-                        android:text="New Program Details"
+                        android:text="New Programme Details"
                         android:textColor="@color/textColorPrimary"
                         android:textSize="16sp"
                         android:textStyle="bold" />
@@ -316,7 +333,7 @@
                             <TextView
                                 android:layout_width="wrap_content"
                                 android:layout_height="wrap_content"
-                                android:text="Program ID"
+                                android:text="Programme ID"
                                 android:textColor="@color/textColorSecondary"
                                 android:textSize="12sp" />
 
@@ -362,7 +379,7 @@
                             <TextView
                                 android:layout_width="wrap_content"
                                 android:layout_height="wrap_content"
-                                android:text="Program Name"
+                                android:text="Programme Name"
                                 android:textColor="@color/textColorSecondary"
                                 android:textSize="12sp" />
 
@@ -435,7 +452,7 @@
                         android:layout_marginTop="24dp"
                         android:background="@drawable/bg_gradient_button"
                         android:elevation="4dp"
-                        android:text="Save Program"
+                        android:text="Save Programme"
                         android:textAllCaps="false"
                         android:textColor="@android:color/white"
                         android:textSize="16sp"

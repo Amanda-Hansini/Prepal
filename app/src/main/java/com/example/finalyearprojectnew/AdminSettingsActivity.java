@@ -49,14 +49,70 @@ public class AdminSettingsActivity extends AppCompatActivity {
         switch2FA.setChecked(prefs.getBoolean("2fa_enabled", false));
         switchEmailNotif.setChecked(prefs.getBoolean("email_notif", true));
         switchSystemAlerts.setChecked(prefs.getBoolean("system_alerts", true));
+
+        if (adminId != null && !adminId.isEmpty()) {
+            db.collection("Admins").document(adminId).get()
+                .addOnSuccessListener(doc -> {
+                    if (doc.exists()) {
+                        Boolean f2fa = doc.getBoolean("twoFactorEnabled");
+                        Boolean femail = doc.getBoolean("emailAlertsEnabled");
+                        Boolean fsystem = doc.getBoolean("systemAlertsEnabled");
+
+                        if (f2fa != null) {
+                            switch2FA.setChecked(f2fa);
+                            prefs.edit().putBoolean("2fa_enabled", f2fa).apply();
+                        }
+                        if (femail != null) {
+                            switchEmailNotif.setChecked(femail);
+                            prefs.edit().putBoolean("email_notif", femail).apply();
+                        }
+                        if (fsystem != null) {
+                            switchSystemAlerts.setChecked(fsystem);
+                            prefs.edit().putBoolean("system_alerts", fsystem).apply();
+                            if (fsystem) {
+                                com.google.firebase.messaging.FirebaseMessaging.getInstance().getToken()
+                                    .addOnSuccessListener(token -> {
+                                        db.collection("Admins").document(adminId).update("fcmToken", token);
+                                    });
+                            }
+                        }
+                    }
+                });
+        }
     }
 
     private void setupListeners() {
         ivBack.setOnClickListener(v -> finish());
 
-        switch2FA.setOnCheckedChangeListener((btn, isChecked) -> prefs.edit().putBoolean("2fa_enabled", isChecked).apply());
-        switchEmailNotif.setOnCheckedChangeListener((btn, isChecked) -> prefs.edit().putBoolean("email_notif", isChecked).apply());
-        switchSystemAlerts.setOnCheckedChangeListener((btn, isChecked) -> prefs.edit().putBoolean("system_alerts", isChecked).apply());
+        switch2FA.setOnCheckedChangeListener((btn, isChecked) -> {
+            prefs.edit().putBoolean("2fa_enabled", isChecked).apply();
+            if (adminId != null && !adminId.isEmpty()) {
+                db.collection("Admins").document(adminId).update("twoFactorEnabled", isChecked);
+                SystemAlertHelper.queueSystemAlert("SECURITY", "2FA Settings Changed", "Admin " + adminId + " set 2FA to " + isChecked);
+            }
+        });
+
+        switchEmailNotif.setOnCheckedChangeListener((btn, isChecked) -> {
+            prefs.edit().putBoolean("email_notif", isChecked).apply();
+            if (adminId != null && !adminId.isEmpty()) {
+                db.collection("Admins").document(adminId).update("emailAlertsEnabled", isChecked);
+            }
+        });
+
+        switchSystemAlerts.setOnCheckedChangeListener((btn, isChecked) -> {
+            prefs.edit().putBoolean("system_alerts", isChecked).apply();
+            if (adminId != null && !adminId.isEmpty()) {
+                db.collection("Admins").document(adminId).update("systemAlertsEnabled", isChecked);
+                if (isChecked) {
+                    com.google.firebase.messaging.FirebaseMessaging.getInstance().getToken()
+                        .addOnSuccessListener(token -> {
+                            db.collection("Admins").document(adminId).update("fcmToken", token);
+                        });
+                } else {
+                    db.collection("Admins").document(adminId).update("fcmToken", "");
+                }
+            }
+        });
 
         llChangePassword.setOnClickListener(v -> showChangePasswordDialog());
 
@@ -98,6 +154,7 @@ public class AdminSettingsActivity extends AppCompatActivity {
             db.collection("Admins").document(adminId)
                 .update("hashed_password", hashedPwd)
                 .addOnSuccessListener(aVoid -> {
+                    SystemAlertHelper.queueSystemAlert("SECURITY", "Admin Password Changed", "Admin " + adminId + " updated their password.");
                     Toast.makeText(this, "Password Updated Successfully", Toast.LENGTH_SHORT).show();
                     dialog.dismiss();
                 })

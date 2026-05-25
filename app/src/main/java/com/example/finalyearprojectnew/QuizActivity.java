@@ -217,6 +217,12 @@ public class QuizActivity extends AppCompatActivity {
         historyData.put("motivationTip", response.motivationTip);
         historyData.put("eligible", response.eligible);
         historyData.put("semesterName", semesterName);
+        
+        // Save the inputs that caused this prediction
+        historyData.put("attendance", requestData.attendance);
+        historyData.put("studyHours", requestData.studyHours);
+        historyData.put("sleepHours", requestData.sleepHours);
+        historyData.put("stressLevel", requestData.stressLevel);
 
         db.collection("AllStudents").document(studentId)
                 .collection("PredictionHistory").add(historyData)

@@ -24,6 +24,7 @@ constraintlayout = { group = "androidx.constraintlayout", name = "constraintlayo
 firebase-bom = { group = "com.google.firebase", name = "firebase-bom", version.ref = "firebaseBom" }
 firebase-firestore = { group = "com.google.firebase", name = "firebase-firestore" }
 firebase-storage = { group = "com.google.firebase", name = "firebase-storage" }
+firebase-messaging = { group = "com.google.firebase", name = "firebase-messaging" }
 glide = { group = "com.github.bumptech.glide", name = "glide", version.ref = "glide" }
 glide-compiler = { group = "com.github.bumptech.glide", name = "compiler", version.ref = "glide" }
 retrofit = { group = "com.squareup.retrofit2", name = "retrofit", version.ref = "retrofit" }

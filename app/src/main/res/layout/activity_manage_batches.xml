@@ -125,6 +125,32 @@
                     <TextView
                         android:layout_width="wrap_content"
                         android:layout_height="wrap_content"
+                        android:text="Select Degree"
+                        android:textColor="@color/textColorPrimary"
+                        android:textSize="16sp"
+                        android:textStyle="bold" />
+
+                    <LinearLayout
+                        android:layout_width="match_parent"
+                        android:layout_height="wrap_content"
+                        android:layout_marginTop="8dp"
+                        android:background="@drawable/bg_rounded_input"
+                        android:paddingHorizontal="12dp"
+                        android:paddingVertical="4dp"
+                        android:elevation="1dp">
+                        
+                        <Spinner
+                            android:id="@+id/spinnerDegreeFilter"
+                            android:layout_width="match_parent"
+                            android:layout_height="48dp"
+                            android:background="@null"
+                            android:spinnerMode="dropdown" />
+                    </LinearLayout>
+
+                    <TextView
+                        android:layout_width="wrap_content"
+                        android:layout_height="wrap_content"
+                        android:layout_marginTop="16dp"
                         android:text="Select Batch"
                         android:textColor="@color/textColorPrimary"
                         android:textSize="16sp"
@@ -133,7 +159,7 @@
                     <LinearLayout
                         android:layout_width="match_parent"
                         android:layout_height="wrap_content"
-                        android:layout_marginTop="16dp"
+                        android:layout_marginTop="8dp"
                         android:background="@drawable/bg_rounded_input"
                         android:paddingHorizontal="12dp"
                         android:paddingVertical="4dp"
@@ -168,7 +194,7 @@
                             android:layout_width="match_parent"
                             android:layout_height="wrap_content"
                             android:layout_marginTop="8dp"
-                            android:text="Program ID: BIT"
+                            android:text="Programme ID: BIT"
                             android:textColor="@color/textColorPrimary"
                             android:textSize="14sp"
                             android:textStyle="bold" />
@@ -334,7 +360,7 @@
                             <TextView
                                 android:layout_width="wrap_content"
                                 android:layout_height="wrap_content"
-                                android:text="Program ID"
+                                android:text="Programme ID"
                                 android:textColor="@color/textColorSecondary"
                                 android:textSize="12sp" />
                             <EditText

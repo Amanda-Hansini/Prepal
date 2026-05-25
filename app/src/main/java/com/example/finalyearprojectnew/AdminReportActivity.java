@@ -33,8 +33,10 @@ public class AdminReportActivity extends AppCompatActivity {
     private BottomNavigationView bottomNavigationView;
     private AppCompatButton btnExportStudents, btnDownloadLogs;
     private android.widget.TextView tvTotalStudents, tvTotalBatches, tvTotalDegrees, tvTotalModules;
-    private com.github.mikephil.charting.charts.PieChart pieChartDistribution;
+    private com.github.mikephil.charting.charts.BarChart barChartVolume;
     private com.google.firebase.firestore.FirebaseFirestore db;
+    private List<com.google.firebase.firestore.DocumentSnapshot> localBatchesList = new ArrayList<>();
+    private List<com.google.firebase.firestore.DocumentSnapshot> localStudentsList = new ArrayList<>();
 
     @Override
     protected void onCreate(Bundle savedInstanceState) {
@@ -58,110 +60,133 @@ public class AdminReportActivity extends AppCompatActivity {
         tvTotalBatches = findViewById(R.id.tvTotalBatches);
         tvTotalDegrees = findViewById(R.id.tvTotalDegrees);
         tvTotalModules = findViewById(R.id.tvTotalModules);
-        pieChartDistribution = findViewById(R.id.pieChartDistribution);
+        barChartVolume = findViewById(R.id.barChartVolume);
     }
 
     private void fetchStats() {
-        // Fetch Total Students using CollectionGroup because of hierarchical structure
-        db.collectionGroup("Student IDs").addSnapshotListener((value, error) -> {
-            if (error != null) return;
-            if (value != null) {
+        // Fetch Total Students in real-time
+        db.collection("AllStudents").addSnapshotListener((value, error) -> {
+            if (error == null && value != null) {
                 tvTotalStudents.setText(String.valueOf(value.size()));
-                setupPieChart(value);
+                localStudentsList.clear();
+                localStudentsList.addAll(value.getDocuments());
+                updateBarChart();
             }
         });
 
-        // Fetch Total Batches
+        // Fetch Total Batches in real-time
         db.collection("Batches").addSnapshotListener((value, error) -> {
             if (error == null && value != null) {
                 tvTotalBatches.setText(String.valueOf(value.size()));
+                localBatchesList.clear();
+                localBatchesList.addAll(value.getDocuments());
+                updateBarChart();
             }
         });
 
-        // Fetch Total Degrees
+        // Fetch Total Degrees in real-time
         db.collection("Degrees").addSnapshotListener((value, error) -> {
             if (error == null && value != null) {
                 tvTotalDegrees.setText(String.valueOf(value.size()));
             }
         });
 
-        // Fetch Total Modules using CollectionGroup
+        // Fetch Total Modules by combining both Web and Mobile subcollections to ensure perfect consistency
+        final int[] mobileModulesCount = {0};
+        final int[] webModulesCount = {0};
+
         db.collectionGroup("Module IDs").addSnapshotListener((value, error) -> {
             if (error == null && value != null) {
-                tvTotalModules.setText(String.valueOf(value.size()));
+                mobileModulesCount[0] = value.size();
+                tvTotalModules.setText(String.valueOf(mobileModulesCount[0] + webModulesCount[0]));
+            }
+        });
+
+        db.collectionGroup("Modules").addSnapshotListener((value, error) -> {
+            if (error == null && value != null) {
+                webModulesCount[0] = value.size();
+                tvTotalModules.setText(String.valueOf(mobileModulesCount[0] + webModulesCount[0]));
             }
         });
     }
 
-    private void setupPieChart(com.google.firebase.firestore.QuerySnapshot studentSnapshots) {
-        java.util.Map<String, Integer> programCount = new java.util.HashMap<>();
-        for (com.google.firebase.firestore.DocumentSnapshot doc : studentSnapshots.getDocuments()) {
-            String parentId = "Unknown";
-            try {
-                parentId = doc.getReference().getParent().getParent().getId();
-            } catch (Exception e) {
-                // Fallback if structure is flat for older documents
-            }
-            
-            String programId = "Unknown";
-            if (parentId.contains("(")) {
-                programId = parentId.substring(0, parentId.indexOf("("));
-            } else if (!parentId.equals("Unknown")) {
-                programId = parentId;
-            }
-
-            programCount.put(programId, programCount.getOrDefault(programId, 0) + 1);
+    private void updateBarChart() {
+        if (localBatchesList.isEmpty() || localStudentsList.isEmpty()) {
+            return;
         }
 
-        java.util.ArrayList<com.github.mikephil.charting.data.PieEntry> entries = new java.util.ArrayList<>();
-        for (java.util.Map.Entry<String, Integer> entry : programCount.entrySet()) {
-            entries.add(new com.github.mikephil.charting.data.PieEntry(entry.getValue(), entry.getKey()));
+        java.util.ArrayList<com.github.mikephil.charting.data.BarEntry> entries = new java.util.ArrayList<>();
+        java.util.ArrayList<String> labels = new java.util.ArrayList<>();
+
+        for (int i = 0; i < localBatchesList.size(); i++) {
+            com.google.firebase.firestore.DocumentSnapshot batchDoc = localBatchesList.get(i);
+            String batchId = batchDoc.getString("batchId");
+            String batchName = batchDoc.getString("batchName");
+            if (batchId == null) continue;
+
+            int count = 0;
+            for (com.google.firebase.firestore.DocumentSnapshot studentDoc : localStudentsList) {
+                String studentBatchId = studentDoc.getString("batchId");
+                if (batchId.equalsIgnoreCase(studentBatchId)) {
+                    count++;
+                }
+            }
+
+            entries.add(new com.github.mikephil.charting.data.BarEntry(i, count));
+            labels.add(batchName != null ? batchName : batchId);
         }
 
-        com.github.mikephil.charting.data.PieDataSet dataSet = new com.github.mikephil.charting.data.PieDataSet(entries, "");
+        com.github.mikephil.charting.data.BarDataSet dataSet = new com.github.mikephil.charting.data.BarDataSet(entries, "Enrolled Students");
+        
         int[] colors = {
-                android.graphics.Color.parseColor("#FF6384"), // Vibrant Pink
-                android.graphics.Color.parseColor("#36A2EB"), // Bright Blue
-                android.graphics.Color.parseColor("#FFCE56"), // Sunny Yellow
-                android.graphics.Color.parseColor("#4BC0C0"), // Teal
-                android.graphics.Color.parseColor("#9966FF"), // Purple
+                android.graphics.Color.parseColor("#057BFE"), // Premium Blue
+                android.graphics.Color.parseColor("#7C3AED"), // Purple
+                android.graphics.Color.parseColor("#2DCC70"), // Success Green
                 android.graphics.Color.parseColor("#FF9F40")  // Orange
         };
         dataSet.setColors(colors);
-        dataSet.setValueTextColor(android.graphics.Color.WHITE);
-        dataSet.setValueTextSize(14f);
-        dataSet.setSliceSpace(4f); // Adding spacing for a premium look
-        dataSet.setSelectionShift(6f); // Pop-out effect
+        dataSet.setValueTextColor(android.graphics.Color.DKGRAY);
+        dataSet.setValueTextSize(12f);
 
-        com.github.mikephil.charting.data.PieData data = new com.github.mikephil.charting.data.PieData(dataSet);
-        pieChartDistribution.setData(data);
-        pieChartDistribution.getDescription().setEnabled(false);
-        
-        pieChartDistribution.setDrawHoleEnabled(true);
-        pieChartDistribution.setHoleColor(android.graphics.Color.TRANSPARENT);
-        pieChartDistribution.setTransparentCircleColor(android.graphics.Color.WHITE);
-        pieChartDistribution.setTransparentCircleAlpha(110);
-        
-        pieChartDistribution.setHoleRadius(58f);
-        pieChartDistribution.setTransparentCircleRadius(61f);
-        
-        pieChartDistribution.setDrawCenterText(true);
-        pieChartDistribution.setCenterText("Program\nDistribution");
-        pieChartDistribution.setCenterTextSize(16f);
-        pieChartDistribution.setCenterTextColor(android.graphics.Color.DKGRAY);
-        pieChartDistribution.setDrawEntryLabels(false); // Looks cleaner, relies on legend
-        
-        com.github.mikephil.charting.components.Legend l = pieChartDistribution.getLegend();
-        l.setVerticalAlignment(com.github.mikephil.charting.components.Legend.LegendVerticalAlignment.CENTER);
-        l.setHorizontalAlignment(com.github.mikephil.charting.components.Legend.LegendHorizontalAlignment.RIGHT);
-        l.setOrientation(com.github.mikephil.charting.components.Legend.LegendOrientation.VERTICAL);
-        l.setDrawInside(false);
-        l.setTextSize(14f);
-        l.setFormSize(14f);
-        l.setFormToTextSpace(5f);
+        com.github.mikephil.charting.data.BarData barData = new com.github.mikephil.charting.data.BarData(dataSet);
+        barChartVolume.setData(barData);
+        barChartVolume.getDescription().setEnabled(false);
 
-        pieChartDistribution.animateY(1400, com.github.mikephil.charting.animation.Easing.EaseInOutQuad);
-        pieChartDistribution.invalidate();
+        // Customize axes for high-fidelity mobile design
+        com.github.mikephil.charting.components.XAxis xAxis = barChartVolume.getXAxis();
+        xAxis.setValueFormatter(new com.github.mikephil.charting.formatter.IndexAxisValueFormatter(labels));
+        xAxis.setPosition(com.github.mikephil.charting.components.XAxis.XAxisPosition.BOTTOM);
+        xAxis.setDrawGridLines(false);
+        xAxis.setGranularity(1f);
+        xAxis.setLabelCount(labels.size());
+        xAxis.setTextColor(android.graphics.Color.DKGRAY);
+        xAxis.setTextSize(10f);
+        xAxis.setLabelRotationAngle(-45f); // Prevent label overlapping on mobile screens
+
+        // Push the chart bottom up to make comfortable room for rotated X-Axis labels and the legend below
+        barChartVolume.setExtraBottomOffset(55f); 
+
+        // Configure legend (Enrolled Students tag) to sit perfectly below the rotated labels
+        com.github.mikephil.charting.components.Legend legend = barChartVolume.getLegend();
+        legend.setVerticalAlignment(com.github.mikephil.charting.components.Legend.LegendVerticalAlignment.BOTTOM);
+        legend.setHorizontalAlignment(com.github.mikephil.charting.components.Legend.LegendHorizontalAlignment.CENTER);
+        legend.setOrientation(com.github.mikephil.charting.components.Legend.LegendOrientation.HORIZONTAL);
+        legend.setDrawInside(false);
+        legend.setYOffset(22f); // Move the tag further down below the rotated labels
+        legend.setTextColor(android.graphics.Color.DKGRAY);
+        legend.setTextSize(12f);
+
+        com.github.mikephil.charting.components.YAxis leftAxis = barChartVolume.getAxisLeft();
+        leftAxis.setGranularity(1f);
+        leftAxis.setTextColor(android.graphics.Color.DKGRAY);
+        leftAxis.setTextSize(11f);
+
+        // Disable right Y axis for cleaner look
+        barChartVolume.getAxisRight().setEnabled(false);
+
+        // Dynamic 3D chart projection tilt-like entry animation
+        barChartVolume.animateY(1200, com.github.mikephil.charting.animation.Easing.EaseInOutQuad);
+        barChartVolume.invalidate();
     }
 
     private void setupBottomNavigation() {

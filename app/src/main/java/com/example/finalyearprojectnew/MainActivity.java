@@ -28,9 +28,8 @@ public class MainActivity extends AppCompatActivity {
     private EditText etEmail, etPassword;
     private ImageView ivTogglePassword;
     private AppCompatButton btnLogin;
-    private TextView tvSignUp, tvForgotPassword;
+    private TextView tvForgotPassword;
     private boolean isPasswordVisible = false;
-    private int authFailedAttempts = 0;
     private int loginAttempts = 0;
 
     @Override
@@ -54,7 +53,6 @@ public class MainActivity extends AppCompatActivity {
         etPassword = findViewById(R.id.etPassword);
         ivTogglePassword = findViewById(R.id.ivTogglePassword);
         btnLogin = findViewById(R.id.btnLogin);
-        tvSignUp = findViewById(R.id.tvSignUp);
         tvForgotPassword = findViewById(R.id.tvForgotPassword);
     }
 
@@ -76,6 +74,11 @@ public class MainActivity extends AppCompatActivity {
 
         // Login Button Click
         btnLogin.setOnClickListener(v -> {
+            if (loginAttempts >= 5) {
+                showAccountLockedDialog("Account Locked", "Your account has been locked. To continue using PrePal, please contact the support team.");
+                return;
+            }
+
             String email = etEmail.getText().toString().trim();
             String password = etPassword.getText().toString().trim();
 
@@ -96,7 +99,7 @@ public class MainActivity extends AppCompatActivity {
 
             FirebaseFirestore db = FirebaseFirestore.getInstance();
 
-            // First, let's check if this input is an Admin ID
+            // Smart Unified Authentication: Check Admin first
             db.collection("Admins").document(email).get()
                     .addOnSuccessListener(documentSnapshot -> {
                         if (documentSnapshot.exists()) {
@@ -106,23 +109,21 @@ public class MainActivity extends AppCompatActivity {
                             if (enteredHashedPassword.equals(storedHashedPassword)) {
                                 loginAttempts = 0; // Reset on success
                                 String adminId = documentSnapshot.getString("admin_id");
-                                getSharedPreferences("UserSession", MODE_PRIVATE)
-                                        .edit()
-                                        .putString("admin_id", adminId)
-                                        .putString("user_type", "admin")
-                                        .apply();
+                                String adminEmail = documentSnapshot.getString("email");
+                                Boolean twoFactorEnabled = documentSnapshot.getBoolean("twoFactorEnabled");
 
-                                Toast.makeText(MainActivity.this, "Admin Login Successful!", Toast.LENGTH_SHORT).show();
-                                Intent intent = new Intent(MainActivity.this, AdminHomeActivity.class);
-                                startActivity(intent);
-                                finish();
+                                if (Boolean.TRUE.equals(twoFactorEnabled)) {
+                                    send2FAOtp(adminId, adminEmail, documentSnapshot);
+                                } else {
+                                    completeAdminLogin(adminId, documentSnapshot);
+                                }
                             } else {
                                 btnLogin.setEnabled(true);
                                 loginAttempts++;
                                 if (loginAttempts >= 5) {
-                                    showErrorDialog("Access Restricted", "Too many failed attempts. Please try again later.");
+                                    showAccountLockedDialog("Account Locked", "Your account has been locked. To continue using PrePal, please contact the support team.");
                                 } else {
-                                    showErrorDialog("Invalid Password", "The password you entered is incorrect. Attempts left: " + (5 - loginAttempts));
+                                    showLoginFailedDialog(5 - loginAttempts);
                                 }
                                 etPassword.requestFocus();
                             }
@@ -138,22 +139,25 @@ public class MainActivity extends AppCompatActivity {
                                             if (enteredHashedPassword.equals(storedHashedPassword)) {
                                                 loginAttempts = 0;
                                                 String adminId = adminDoc.getString("admin_id");
-                                                getSharedPreferences("UserSession", MODE_PRIVATE)
-                                                        .edit()
-                                                        .putString("admin_id", adminId)
-                                                        .putString("user_type", "admin")
-                                                        .apply();
+                                                String adminEmail = adminDoc.getString("email");
+                                                Boolean twoFactorEnabled = adminDoc.getBoolean("twoFactorEnabled");
 
-                                                Toast.makeText(MainActivity.this, "Admin Login Successful!", Toast.LENGTH_SHORT).show();
-                                                Intent intent = new Intent(MainActivity.this, AdminHomeActivity.class);
-                                                startActivity(intent);
-                                                finish();
+                                                if (Boolean.TRUE.equals(twoFactorEnabled)) {
+                                                    send2FAOtp(adminId, adminEmail, adminDoc);
+                                                } else {
+                                                    completeAdminLogin(adminId, adminDoc);
+                                                }
                                             } else {
                                                 btnLogin.setEnabled(true);
                                                 loginAttempts++;
-                                                showErrorDialog("Invalid Password", "The password you entered is incorrect. Attempts left: " + (5 - loginAttempts));
+                                                if (loginAttempts >= 5) {
+                                                    showAccountLockedDialog("Account Locked", "Your account has been locked. To continue using PrePal, please contact the support team.");
+                                                } else {
+                                                    showLoginFailedDialog(5 - loginAttempts);
+                                                }
                                             }
                                         } else {
+                                            // Fallback to Student Login
                                             checkStudentLogin(email, password, db);
                                         }
                                     })
@@ -184,46 +188,6 @@ public class MainActivity extends AppCompatActivity {
 
             dialog.show();
         });
-
-        tvSignUp.setOnClickListener(v -> {
-            // Label is now "Admin Registration" in XML to clarify for students
-            if (authFailedAttempts >= 3) {
-                Toast.makeText(MainActivity.this, "Admin sign-up is locked due to too many failed attempts.", Toast.LENGTH_LONG).show();
-                return;
-            }
-
-            AlertDialog.Builder builder = new AlertDialog.Builder(MainActivity.this);
-            View dialogView = LayoutInflater.from(MainActivity.this).inflate(R.layout.dialog_auth_key, null);
-            builder.setView(dialogView);
-
-            AlertDialog dialog = builder.create();
-            if (dialog.getWindow() != null) {
-                dialog.getWindow().setBackgroundDrawableResource(android.R.color.transparent);
-            }
-
-            EditText etAuthKey = dialogView.findViewById(R.id.etAuthKey);
-            AppCompatButton btnVerifyKey = dialogView.findViewById(R.id.btnVerifyKey);
-
-            btnVerifyKey.setOnClickListener(verifyView -> {
-                String enteredKey = etAuthKey.getText().toString().trim();
-                if (enteredKey.equals("Prepal_Admin_Saegis")) {
-                    authFailedAttempts = 0;
-                    dialog.dismiss();
-                    startActivity(new Intent(MainActivity.this, admin_sign_up.class));
-                } else {
-                    authFailedAttempts++;
-                    if (authFailedAttempts >= 3) {
-                        dialog.dismiss();
-                        Toast.makeText(MainActivity.this, "Access Locked. Too many failed attempts.", Toast.LENGTH_LONG).show();
-                    } else {
-                        etAuthKey.setError("Invalid Key. Attempts left: " + (3 - authFailedAttempts));
-                        etAuthKey.requestFocus();
-                    }
-                }
-            });
-
-            dialog.show();
-        });
     }
 
     private void checkStudentLogin(String studentId, String password, FirebaseFirestore db) {
@@ -234,7 +198,12 @@ public class MainActivity extends AppCompatActivity {
                         handleStudentDocument(studentDoc, password, db);
                     } else {
                         btnLogin.setEnabled(true);
-                        showErrorDialog("ID Not Found", "The Student ID you entered is not registered. Please ensure the admin has synced the batch.");
+                        loginAttempts++;
+                        if (loginAttempts >= 5) {
+                            showAccountLockedDialog("Account Locked", "Your account has been locked. To continue using PrePal, please contact the support team.");
+                        } else {
+                            showLoginFailedDialog(5 - loginAttempts);
+                        }
                     }
                 })
                 .addOnFailureListener(e -> {
@@ -250,7 +219,7 @@ public class MainActivity extends AppCompatActivity {
 
         if ("inactive".equalsIgnoreCase(status)) {
             btnLogin.setEnabled(true);
-            showErrorDialog("Account Inactive", "Your account is currently disabled. Please contact your administrator.");
+            showAccountLockedDialog("Account Inactive", "Your account is currently disabled. Please contact your administrator.");
             return;
         }
 
@@ -285,7 +254,11 @@ public class MainActivity extends AppCompatActivity {
         } else {
             btnLogin.setEnabled(true);
             loginAttempts++;
-            showErrorDialog("Invalid Password", "The password you entered is incorrect. Attempts left: " + (5 - loginAttempts));
+            if (loginAttempts >= 5) {
+                showAccountLockedDialog("Account Locked", "Your account has been locked. To continue using PrePal, please contact the support team.");
+            } else {
+                showLoginFailedDialog(5 - loginAttempts);
+            }
         }
     }
 
@@ -307,5 +280,204 @@ public class MainActivity extends AppCompatActivity {
         AppCompatButton btnErrorOk = dialogView.findViewById(R.id.btnErrorOk);
         btnErrorOk.setOnClickListener(v1 -> dialog.dismiss());
         dialog.show();
+    }
+
+    private void showLoginFailedDialog(int attemptsLeft) {
+        AlertDialog.Builder builder = new AlertDialog.Builder(MainActivity.this);
+        View dialogView = LayoutInflater.from(MainActivity.this).inflate(R.layout.dialog_login_failed, null);
+        builder.setView(dialogView);
+
+        TextView tvAttemptsCount = dialogView.findViewById(R.id.tvAttemptsCount);
+        String text = "You have <font color='#E53E3E'>" + attemptsLeft + "</font> attempts remaining";
+        if (android.os.Build.VERSION.SDK_INT >= android.os.Build.VERSION_CODES.N) {
+            tvAttemptsCount.setText(android.text.Html.fromHtml(text, android.text.Html.FROM_HTML_MODE_LEGACY));
+        } else {
+            tvAttemptsCount.setText(android.text.Html.fromHtml(text));
+        }
+
+        AlertDialog dialog = builder.create();
+        if (dialog.getWindow() != null) {
+            dialog.getWindow().setBackgroundDrawableResource(android.R.color.transparent);
+        }
+
+        AppCompatButton btnTryAgain = dialogView.findViewById(R.id.btnTryAgain);
+        btnTryAgain.setOnClickListener(v1 -> dialog.dismiss());
+
+        TextView tvForgot = dialogView.findViewById(R.id.tvDialogForgot);
+        tvForgot.setOnClickListener(v1 -> {
+            dialog.dismiss();
+            tvForgotPassword.performClick();
+        });
+
+        dialog.show();
+    }
+
+    private void showAccountLockedDialog(String title, String message) {
+        SystemAlertHelper.queueSystemAlert("SECURITY", "Account Security Alert", "Title: " + title + "\nMessage: " + message);
+        AlertDialog.Builder builder = new AlertDialog.Builder(MainActivity.this);
+        View dialogView = LayoutInflater.from(MainActivity.this).inflate(R.layout.dialog_login_failed, null);
+        builder.setView(dialogView);
+
+        TextView tvTitle = dialogView.findViewById(R.id.tvErrorTitle);
+        TextView tvMessage = dialogView.findViewById(R.id.tvErrorMessage);
+        View llAttemptsBox = dialogView.findViewById(R.id.llAttemptsBox);
+        AppCompatButton btnTryAgain = dialogView.findViewById(R.id.btnTryAgain);
+        TextView tvForgot = dialogView.findViewById(R.id.tvDialogForgot);
+
+        tvTitle.setText(title);
+        tvMessage.setText(message);
+        llAttemptsBox.setVisibility(View.GONE);
+        tvForgot.setVisibility(View.GONE);
+        btnTryAgain.setText("Understood");
+
+        AlertDialog dialog = builder.create();
+        if (dialog.getWindow() != null) {
+            dialog.getWindow().setBackgroundDrawableResource(android.R.color.transparent);
+        }
+
+        btnTryAgain.setOnClickListener(v1 -> dialog.dismiss());
+
+        dialog.show();
+    }
+
+    private void completeAdminLogin(String adminId, DocumentSnapshot documentSnapshot) {
+        loginAttempts = 0; // Reset on success
+        getSharedPreferences("UserSession", MODE_PRIVATE)
+                .edit()
+                .putString("admin_id", adminId)
+                .putString("user_type", "admin")
+                .apply();
+
+        Toast.makeText(MainActivity.this, "Login Successful!", Toast.LENGTH_SHORT).show();
+        Intent intent = new Intent(MainActivity.this, AdminHomeActivity.class);
+        startActivity(intent);
+        finish();
+    }
+
+    private void send2FAOtp(String adminId, String adminEmail, DocumentSnapshot adminDoc) {
+        String otp = String.format("%06d", new java.util.Random().nextInt(1000000));
+        long expiryTime = System.currentTimeMillis() + (5 * 60 * 1000); // 5 minutes expiry
+
+        java.util.Map<String, Object> verificationData = new java.util.HashMap<>();
+        verificationData.put("code", otp);
+        verificationData.put("expiresAt", expiryTime);
+
+        FirebaseFirestore.getInstance().collection("Admins").document(adminDoc.getId())
+                .update("twoFactorVerification", verificationData)
+                .addOnSuccessListener(aVoid -> {
+                    // Queue the 2FA Email Document to trigger delivery
+                    java.util.Map<String, Object> emailDoc = new java.util.HashMap<>();
+                    emailDoc.put("to", adminEmail != null ? adminEmail : adminDoc.getId());
+                    java.util.Map<String, Object> message = new java.util.HashMap<>();
+                    message.put("subject", "PrePal Two-Factor Authentication OTP");
+                    message.put("text", "Your PrePal login verification code is: " + otp + ". This code will expire in 5 minutes.");
+                    emailDoc.put("message", message);
+
+                    FirebaseFirestore.getInstance().collection("2FA_Emails").add(emailDoc);
+
+                    // Alert test mode with a Toast
+                    Toast.makeText(MainActivity.this, "[TEST MODE] OTP Sent to Email: " + otp, Toast.LENGTH_LONG).show();
+
+                    btnLogin.setEnabled(true);
+                    show2FaVerificationDialog(adminId, adminDoc, otp);
+                })
+                .addOnFailureListener(e -> {
+                    btnLogin.setEnabled(true);
+                    Toast.makeText(MainActivity.this, "2FA Initialization Failed: " + e.getMessage(), Toast.LENGTH_SHORT).show();
+                });
+    }
+
+    private void show2FaVerificationDialog(String adminId, DocumentSnapshot adminDoc, String correctOtp) {
+        AlertDialog.Builder builder = new AlertDialog.Builder(MainActivity.this);
+        android.widget.LinearLayout layout = new android.widget.LinearLayout(this);
+        layout.setOrientation(android.widget.LinearLayout.VERTICAL);
+        layout.setPadding(60, 40, 60, 40);
+
+        TextView tvTitle = new TextView(this);
+        tvTitle.setText("Two-Factor Verification");
+        tvTitle.setTextSize(20);
+        tvTitle.setTextColor(getResources().getColor(R.color.textColorPrimary, getTheme()));
+        tvTitle.setTypeface(null, android.graphics.Typeface.BOLD);
+        layout.addView(tvTitle);
+
+        TextView tvSub = new TextView(this);
+        tvSub.setText("A 6-digit verification code has been sent to your email. Enter the code below to complete your login.");
+        tvSub.setTextSize(14);
+        tvSub.setPadding(0, 16, 0, 16);
+        tvSub.setTextColor(getResources().getColor(R.color.textColorSecondary, getTheme()));
+        layout.addView(tvSub);
+
+        EditText etOtp = new EditText(this);
+        etOtp.setHint("Enter 6-Digit Code");
+        etOtp.setInputType(InputType.TYPE_CLASS_NUMBER);
+        etOtp.setTextSize(16);
+        etOtp.setGravity(android.view.Gravity.CENTER);
+        etOtp.setBackgroundResource(R.drawable.bg_rounded_input);
+        etOtp.setPadding(20, 24, 20, 24);
+        layout.addView(etOtp);
+
+        androidx.cardview.widget.CardView card = new androidx.cardview.widget.CardView(this);
+        card.setRadius(32);
+        card.setCardBackgroundColor(getResources().getColor(R.color.inputBackground, getTheme()));
+        card.setCardElevation(12);
+        card.addView(layout);
+
+        builder.setView(card);
+        AlertDialog finalDialog = builder.create();
+        if (finalDialog.getWindow() != null) {
+            finalDialog.getWindow().setBackgroundDrawableResource(android.R.color.transparent);
+        }
+
+        AppCompatButton btnVerify = new AppCompatButton(this);
+        btnVerify.setText("Verify & Log In");
+        btnVerify.setTextColor(android.graphics.Color.WHITE);
+        btnVerify.setTextSize(15);
+        btnVerify.setTypeface(null, android.graphics.Typeface.BOLD);
+        btnVerify.setBackgroundResource(R.drawable.bg_gradient_button);
+        btnVerify.setAllCaps(false);
+        android.widget.LinearLayout.LayoutParams params = new android.widget.LinearLayout.LayoutParams(
+                android.widget.LinearLayout.LayoutParams.MATCH_PARENT, 120
+        );
+        params.setMargins(0, 32, 0, 0);
+        btnVerify.setLayoutParams(params);
+        layout.addView(btnVerify);
+
+        btnVerify.setOnClickListener(v -> {
+            String enteredCode = etOtp.getText().toString().trim();
+            if (enteredCode.length() != 6) {
+                etOtp.setError("Code must be 6 digits");
+                return;
+            }
+
+            FirebaseFirestore.getInstance().collection("Admins").document(adminDoc.getId()).get()
+                    .addOnSuccessListener(latestSnap -> {
+                        if (latestSnap.exists()) {
+                            java.util.Map<String, Object> verification = (java.util.Map<String, Object>) latestSnap.get("twoFactorVerification");
+                            if (verification != null) {
+                                String code = (String) verification.get("code");
+                                Long expiry = (Long) verification.get("expiresAt");
+
+                                if (code != null && code.equals(enteredCode)) {
+                                    if (expiry != null && System.currentTimeMillis() <= expiry) {
+                                        finalDialog.dismiss();
+                                        Toast.makeText(MainActivity.this, "OTP Verified!", Toast.LENGTH_SHORT).show();
+                                        completeAdminLogin(adminId, adminDoc);
+                                    } else {
+                                        etOtp.setError("Verification code has expired");
+                                    }
+                                } else {
+                                    etOtp.setError("Invalid verification code");
+                                }
+                            } else {
+                                etOtp.setError("No verification request found");
+                            }
+                        }
+                    })
+                    .addOnFailureListener(e -> {
+                        Toast.makeText(MainActivity.this, "Verification failed: " + e.getMessage(), Toast.LENGTH_SHORT).show();
+                    });
+        });
+
+        finalDialog.show();
     }
 }

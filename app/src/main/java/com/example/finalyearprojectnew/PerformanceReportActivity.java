@@ -104,17 +104,21 @@ public class PerformanceReportActivity extends AppCompatActivity {
                 .collection("SemesterResults").document(semesterName)
                 .delete()
                 .addOnSuccessListener(aVoid -> {
-                    // 2. Delete from PredictionHistory (find matches by semesterName)
+                    // 2. Delete ALL from PredictionHistory since the timeline is now invalid
                     db.collection("AllStudents").document(studentId)
                             .collection("PredictionHistory")
-                            .whereEqualTo("semesterName", semesterName)
                             .get()
                             .addOnSuccessListener(queryDocumentSnapshots -> {
                                 for (DocumentSnapshot doc : queryDocumentSnapshots) {
                                     doc.getReference().delete();
                                 }
-                                Toast.makeText(this, "Results and Predictions deleted successfully", Toast.LENGTH_SHORT).show();
-                                loadAllPerformanceData(); // Refresh list
+                                Toast.makeText(this, "Results deleted successfully", Toast.LENGTH_SHORT).show();
+                                
+                                // Redirect to ManualResultEntryActivity so the user can re-enter their results
+                                Intent intent = new Intent(PerformanceReportActivity.this, ManualResultEntryActivity.class);
+                                intent.setFlags(Intent.FLAG_ACTIVITY_NEW_TASK | Intent.FLAG_ACTIVITY_CLEAR_TASK);
+                                startActivity(intent);
+                                finish();
                             });
                 })
                 .addOnFailureListener(e -> {

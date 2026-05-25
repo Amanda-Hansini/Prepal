@@ -16,6 +16,7 @@ import androidx.appcompat.app.AppCompatActivity;
 import androidx.appcompat.widget.AppCompatButton;
 import androidx.cardview.widget.CardView;
 
+import com.google.firebase.firestore.DocumentSnapshot;
 import com.google.firebase.firestore.FirebaseFirestore;
 import com.google.firebase.firestore.QueryDocumentSnapshot;
 
@@ -28,6 +29,7 @@ public class ManageBatchesActivity extends AppCompatActivity {
 
     private ImageView ivBack;
     private Spinner spinnerBatches;
+    private Spinner spinnerDegreeFilter;
     private LinearLayout llBatchDetails;
     private TextView tvSelectedProgramId, tvSelectedBatchId, tvSelectedBatchName, tvSelectedIntakeYear;
     private AppCompatButton btnToggleAddBatch, btnSaveBatch, btnManageStudents, btnEditBatch, btnDeleteBatch;
@@ -39,6 +41,8 @@ public class ManageBatchesActivity extends AppCompatActivity {
 
     private FirebaseFirestore db;
     private List<Batch> batchList;
+    private List<String> degreesList = new ArrayList<>();
+    private List<Batch> allBatchesList = new ArrayList<>();
     private Batch currentlySelectedBatch = null;
     private boolean isUpdateMode = false;
 
@@ -56,6 +60,7 @@ public class ManageBatchesActivity extends AppCompatActivity {
     private void initViews() {
         ivBack = findViewById(R.id.ivBack);
         spinnerBatches = findViewById(R.id.spinnerBatches);
+        spinnerDegreeFilter = findViewById(R.id.spinnerDegreeFilter);
         llBatchDetails = findViewById(R.id.llBatchDetails);
 
         tvSelectedProgramId = findViewById(R.id.tvSelectedProgramId);
@@ -80,34 +85,92 @@ public class ManageBatchesActivity extends AppCompatActivity {
 
     private void fetchBatchesFromFirestore() {
         batchList = new ArrayList<>();
-        db.collection("Batches").get().addOnCompleteListener(task -> {
-            if (task.isSuccessful()) {
-                batchList.clear();
-                List<String> batchNames = new ArrayList<>();
-                batchNames.add("Select a Batch...");
-
-                for (QueryDocumentSnapshot document : task.getResult()) {
-                    String programId = document.getString("programId");
-                    String batchId = document.getString("batchId");
-                    String batchName = document.getString("batchName");
-                    String intakeYear = document.getString("intakeYear");
-                    
-                    Batch b = new Batch(programId, batchId, batchName, intakeYear);
-                    batchList.add(b);
-                    batchNames.add(b.getBatchName() + " (" + b.getProgramId() + ")");
-                }
-
-                ArrayAdapter<String> adapter = new ArrayAdapter<>(ManageBatchesActivity.this, R.layout.spinner_item, batchNames);
-                adapter.setDropDownViewResource(R.layout.spinner_dropdown_item);
-                spinnerBatches.setAdapter(adapter);
-            } else {
-                Toast.makeText(ManageBatchesActivity.this, "Failed to load batches", Toast.LENGTH_SHORT).show();
+        allBatchesList = new ArrayList<>();
+        
+        // Fetch all degrees first
+        db.collection("Degrees").get().addOnSuccessListener(degreeSnaps -> {
+            degreesList.clear();
+            degreesList.add("All Degrees");
+            for (DocumentSnapshot doc : degreeSnaps) {
+                degreesList.add(doc.getId());
             }
+            ArrayAdapter<String> degAdapter = new ArrayAdapter<>(this, R.layout.spinner_item, degreesList);
+            degAdapter.setDropDownViewResource(R.layout.spinner_dropdown_item);
+            spinnerDegreeFilter.setAdapter(degAdapter);
+
+            // Fetch all batches
+            db.collection("Batches").get().addOnCompleteListener(task -> {
+                if (task.isSuccessful()) {
+                    allBatchesList.clear();
+                    for (QueryDocumentSnapshot document : task.getResult()) {
+                        String programId = document.getString("programId");
+                        String batchId = document.getString("batchId");
+                        String batchName = document.getString("batchName");
+                        String intakeYear = document.getString("intakeYear");
+                        
+                        Batch b = new Batch(programId, batchId, batchName, intakeYear);
+                        allBatchesList.add(b);
+                    }
+                    
+                    String selectedDegree = spinnerDegreeFilter.getSelectedItem() != null ? 
+                            spinnerDegreeFilter.getSelectedItem().toString() : "All Degrees";
+                    updateBatchSpinner(selectedDegree);
+                } else {
+                    Toast.makeText(ManageBatchesActivity.this, "Failed to load batches", Toast.LENGTH_SHORT).show();
+                }
+            });
+        }).addOnFailureListener(e -> {
+            Toast.makeText(ManageBatchesActivity.this, "Failed to load degrees", Toast.LENGTH_SHORT).show();
         });
+    }
+
+    private void updateBatchSpinner(String selectedDegree) {
+        String prevSelectedBatchId = currentlySelectedBatch != null ? currentlySelectedBatch.getBatchId() : null;
+
+        batchList.clear();
+        List<String> batchNames = new ArrayList<>();
+        batchNames.add("Select a Batch...");
+
+        for (Batch b : allBatchesList) {
+            if (selectedDegree.equals("All Degrees") || (b.getProgramId() != null && b.getProgramId().equalsIgnoreCase(selectedDegree))) {
+                batchList.add(b);
+                batchNames.add(b.getBatchName() + " (" + b.getProgramId() + ")");
+            }
+        }
+
+        ArrayAdapter<String> adapter = new ArrayAdapter<>(ManageBatchesActivity.this, R.layout.spinner_item, batchNames);
+        adapter.setDropDownViewResource(R.layout.spinner_dropdown_item);
+        spinnerBatches.setAdapter(adapter);
+
+        // Restore selected batch if it still exists in the filtered list
+        if (prevSelectedBatchId != null) {
+            for (int i = 0; i < batchList.size(); i++) {
+                if (batchList.get(i).getBatchId().equalsIgnoreCase(prevSelectedBatchId)) {
+                    spinnerBatches.setSelection(i + 1);
+                    return;
+                }
+            }
+        }
+        
+        // If not restored, reset selection to 0
+        spinnerBatches.setSelection(0);
+        currentlySelectedBatch = null;
+        llBatchDetails.setVisibility(View.GONE);
     }
 
     private void setupListeners() {
         ivBack.setOnClickListener(v -> finish());
+
+        spinnerDegreeFilter.setOnItemSelectedListener(new AdapterView.OnItemSelectedListener() {
+            @Override
+            public void onItemSelected(AdapterView<?> parent, View view, int position, long id) {
+                String selectedDegree = spinnerDegreeFilter.getSelectedItem().toString();
+                updateBatchSpinner(selectedDegree);
+            }
+
+            @Override
+            public void onNothingSelected(AdapterView<?> parent) {}
+        });
 
         spinnerBatches.setOnItemSelectedListener(new AdapterView.OnItemSelectedListener() {
             @Override
@@ -146,6 +209,15 @@ public class ManageBatchesActivity extends AppCompatActivity {
             isUpdateMode = false;
             tvFormTitle.setText("New Batch Details");
             etBatchId.setEnabled(true);
+            
+            // Pre-populate Programme ID if a specific degree filter is selected
+            String selectedDegree = spinnerDegreeFilter.getSelectedItem() != null ? 
+                    spinnerDegreeFilter.getSelectedItem().toString() : "All Degrees";
+            if (!selectedDegree.equals("All Degrees")) {
+                etProgramId.setText(selectedDegree);
+            } else {
+                etProgramId.setText("");
+            }
             
             cardAddBatchForm.setVisibility(View.VISIBLE);
             btnToggleAddBatch.setVisibility(View.GONE);

@@ -9,7 +9,7 @@ import com.google.android.material.bottomnavigation.BottomNavigationView;
 
 public class AdminHomeActivity extends AppCompatActivity {
 
-    private CardView cardDegree, cardBatch, cardSemester, cardModule;
+    private CardView cardDegree, cardBatch, cardSemester, cardModule, cardWizard;
     private BottomNavigationView bottomNavigationView;
     private android.widget.TextView tvAdminId, tvWelcomeAdmin, tvCurrentDate;
     private android.widget.ImageView ivAdminProfile;
@@ -35,6 +35,7 @@ public class AdminHomeActivity extends AppCompatActivity {
         cardBatch = findViewById(R.id.cardBatch);
         cardSemester = findViewById(R.id.cardSemester);
         cardModule = findViewById(R.id.cardModule);
+        cardWizard = findViewById(R.id.cardWizard);
         bottomNavigationView = findViewById(R.id.bottomNavigationAdmin);
         
         tvAdminId = findViewById(R.id.tvAdminId);
@@ -86,6 +87,11 @@ public class AdminHomeActivity extends AppCompatActivity {
 
         cardDegree.setOnClickListener(v -> {
             Intent intent = new Intent(AdminHomeActivity.this, ManageDegreesActivity.class);
+            startActivity(intent);
+        });
+
+        cardWizard.setOnClickListener(v -> {
+            Intent intent = new Intent(AdminHomeActivity.this, ProgrammeSetupWizardActivity.class);
             startActivity(intent);
         });
 

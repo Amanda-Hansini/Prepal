@@ -218,16 +218,16 @@
                     <TextView
                         android:layout_width="wrap_content"
                         android:layout_height="wrap_content"
-                        android:text="Student Distribution"
+                        android:text="Batch Volume Projection"
                         android:textColor="@color/textColorPrimary"
                         android:textSize="16sp"
                         android:textStyle="bold"
                         android:layout_marginBottom="16dp" />
 
-                    <com.github.mikephil.charting.charts.PieChart
-                        android:id="@+id/pieChartDistribution"
+                    <com.github.mikephil.charting.charts.BarChart
+                        android:id="@+id/barChartVolume"
                         android:layout_width="match_parent"
-                        android:layout_height="250dp" />
+                        android:layout_height="330dp" />
                 </LinearLayout>
             </androidx.cardview.widget.CardView>
 
