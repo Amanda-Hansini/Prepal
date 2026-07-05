@@ -402,7 +402,7 @@ public class ManageStudentsActivity extends AppCompatActivity {
         builder.setTitle("Add Single Student");
         builder.setPositiveButton("Add", (dialog, which) -> {
             String targetBatch = spinnerBatchSelect.getSelectedItem() != null ? spinnerBatchSelect.getSelectedItem().toString() : batchId;
-            String sid = etId.getText().toString().trim();
+            String sid = etId.getText().toString().trim().toUpperCase();
             String name = etName.getText().toString().trim();
             String email = etEmail.getText().toString().trim();
             String pwd = etPassword.getText().toString().trim();
@@ -551,7 +551,7 @@ public class ManageStudentsActivity extends AppCompatActivity {
                     }
                     
                     if (tokens.length >= 5) {
-                        String sId = tokens[0].trim();
+                        String sId = tokens[0].trim().toUpperCase();
                         String name = tokens[1].trim();
                         String email = tokens[2].trim();
                         String rawPassword = tokens[3].trim();
@@ -581,6 +581,7 @@ public class ManageStudentsActivity extends AppCompatActivity {
     }
 
     private void saveStudentToFirebase(String studentId, String fullName, String email, String rawPassword, String status, String targetBatch) {
+        final String finalStudentId = studentId.toUpperCase();
         String hashedPassword = SecurityUtils.hashPassword(rawPassword);
 
         // Resolve programId from targetBatch mapping
@@ -590,7 +591,7 @@ public class ManageStudentsActivity extends AppCompatActivity {
         }
 
         Map<String, Object> studentMap = new HashMap<>();
-        studentMap.put("studentId", studentId);
+        studentMap.put("studentId", finalStudentId);
         studentMap.put("fullName", fullName);
         studentMap.put("email", email);
         studentMap.put("status", status);
@@ -605,12 +606,12 @@ public class ManageStudentsActivity extends AppCompatActivity {
         }
         
         // Save to nested collection (for Admin)
-        db.collection("Students").document(docPath).collection("Student IDs").document(studentId).set(studentMap);
+        db.collection("Students").document(docPath).collection("Student IDs").document(finalStudentId).set(studentMap);
         
         // Save to flat collection (for Login)
-        db.collection("AllStudents").document(studentId).set(studentMap)
+        db.collection("AllStudents").document(finalStudentId).set(studentMap)
                 .addOnSuccessListener(aVoid -> {
-                    ActivityLogger.logAction(this, "Added Single Student", "ID: " + studentId + ", Batch: " + targetBatch);
+                    ActivityLogger.logAction(this, "Added Single Student", "ID: " + finalStudentId + ", Batch: " + targetBatch);
                     Toast.makeText(this, "Student Added", Toast.LENGTH_SHORT).show();
                     fetchGlobalStudents();
                 })
@@ -618,6 +619,7 @@ public class ManageStudentsActivity extends AppCompatActivity {
     }
 
     private void saveStudentToFirebaseSync(String studentId, String fullName, String email, String rawPassword, String status, String targetBatch) {
+        final String finalStudentId = studentId.toUpperCase();
         String hashedPassword = SecurityUtils.hashPassword(rawPassword);
 
         // Resolve programId from targetBatch mapping
@@ -627,7 +629,7 @@ public class ManageStudentsActivity extends AppCompatActivity {
         }
 
         Map<String, Object> studentMap = new HashMap<>();
-        studentMap.put("studentId", studentId);
+        studentMap.put("studentId", finalStudentId);
         studentMap.put("fullName", fullName);
         studentMap.put("email", email);
         studentMap.put("status", status);
@@ -640,7 +642,7 @@ public class ManageStudentsActivity extends AppCompatActivity {
         if (docPath == null) {
             docPath = targetProgramId + "(" + targetBatch + ")";
         }
-        db.collection("Students").document(docPath).collection("Student IDs").document(studentId).set(studentMap);
-        db.collection("AllStudents").document(studentId).set(studentMap);
+        db.collection("Students").document(docPath).collection("Student IDs").document(finalStudentId).set(studentMap);
+        db.collection("AllStudents").document(finalStudentId).set(studentMap);
     }
 }

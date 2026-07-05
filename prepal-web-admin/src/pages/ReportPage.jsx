@@ -1,4 +1,5 @@
 import React, { useState, useEffect, useRef } from 'react';
+import toast from "react-hot-toast";
 import { motion, AnimatePresence } from 'framer-motion';
 import { 
   BarChart3, FileSpreadsheet, Download, RefreshCw, 
@@ -136,13 +137,13 @@ const ReportPage = ({ setPage }) => {
   const handleDownloadBatchReport = async () => {
     const batchDoc = batches.find(b => b.batchId === selectedBatchId);
     if (!batchDoc) {
-      alert("Please select a valid batch first.");
+      toast.error("Please select a valid batch first.")
       return;
     }
 
     const batchStudents = students.filter(s => s.batchId === selectedBatchId);
     if (batchStudents.length === 0) {
-      alert(`No students are currently enrolled in batch "${batchDoc.batchName}".`);
+      toast.success(`No students are currently enrolled in batch "${batchDoc.batchName}".`)
       return;
     }
 
@@ -178,14 +179,14 @@ const ReportPage = ({ setPage }) => {
       triggerAlert(`Successfully downloaded ${fileName}!`);
     } catch (err) {
       console.error("Error creating student Excel sheet: ", err);
-      alert("Failed to generate Excel report. Please try again.");
+      toast.error("Failed to generate Excel report. Please try again.")
     }
   };
 
   // Excel exporter helper for administrative Activity logs
   const handleDownloadActivityLogs = async () => {
     if (activities.length === 0) {
-      alert("No activity logs available for export.");
+      toast.success("No activity logs available for export.")
       return;
     }
 
@@ -229,7 +230,7 @@ const ReportPage = ({ setPage }) => {
       triggerAlert("Successfully downloaded Admin Activity Logs!");
     } catch (err) {
       console.error("Error exporting Activity Logs: ", err);
-      alert("Failed to export activity logs.");
+      toast.error("Failed to export activity logs.")
     }
   };
 

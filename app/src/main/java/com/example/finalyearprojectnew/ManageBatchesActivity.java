@@ -108,7 +108,7 @@ public class ManageBatchesActivity extends AppCompatActivity {
                         String batchName = document.getString("batchName");
                         String intakeYear = document.getString("intakeYear");
                         
-                        Batch b = new Batch(programId, batchId, batchName, intakeYear);
+                        Batch b = new Batch(programId, batchId, batchName, intakeYear, document.getId());
                         allBatchesList.add(b);
                     }
                     
@@ -246,20 +246,12 @@ public class ManageBatchesActivity extends AppCompatActivity {
         btnDeleteBatch.setOnClickListener(v -> {
             if (currentlySelectedBatch != null) {
                 new androidx.appcompat.app.AlertDialog.Builder(this)
-                        .setTitle("Delete Batch")
-                        .setMessage("Are you sure you want to delete this batch?")
-                        .setPositiveButton("Yes", (dialog, which) -> {
-                            db.collection("Batches").document(currentlySelectedBatch.getBatchId())
-                                    .delete()
-                                    .addOnSuccessListener(aVoid -> {
-                                        ActivityLogger.logAction(this, "Deleted Batch", "ID: " + currentlySelectedBatch.getBatchId());
-                                        Toast.makeText(this, "Batch deleted", Toast.LENGTH_SHORT).show();
-                                        fetchBatchesFromFirestore();
-                                        closeAddBatchForm();
-                                    })
-                                    .addOnFailureListener(e -> Toast.makeText(this, "Failed to delete", Toast.LENGTH_SHORT).show());
+                        .setTitle("Delete Batch & Cascade")
+                        .setMessage("Are you sure you want to delete this batch? WARNING: This will permanently delete all associated semesters, modules, and enrolled students for this batch.")
+                        .setPositiveButton("Yes, Delete All", (dialog, which) -> {
+                            performCascadedBatchDelete(currentlySelectedBatch);
                         })
-                        .setNegativeButton("No", null)
+                        .setNegativeButton("Cancel", null)
                         .show();
             }
         });
@@ -284,14 +276,23 @@ public class ManageBatchesActivity extends AppCompatActivity {
             batchData.put("batchName", batchName);
             batchData.put("intakeYear", intakeYear);
 
-            db.collection("Batches").document(batchId).set(batchData)
+            String batchDocPath = programId + "(" + batchName + ")";
+            db.collection("Batches").document(batchDocPath).set(batchData)
                     .addOnSuccessListener(aVoid -> {
-                        ActivityLogger.logAction(this, isUpdateMode ? "Updated Batch" : "Added Batch", "ID: " + batchId + ", Name: " + batchName);
-                        Toast.makeText(ManageBatchesActivity.this, isUpdateMode ? "Batch updated successfully" : "Batch saved successfully", Toast.LENGTH_SHORT).show();
-                        closeAddBatchForm();
-                        fetchBatchesFromFirestore(); // Refresh list
-                        btnSaveBatch.setEnabled(true);
-                        btnSaveBatch.setText("Save Batch");
+                        db.collection("Degrees").document(programId).collection("Batches").document(batchDocPath).set(batchData)
+                                .addOnSuccessListener(aVoid2 -> {
+                                    ActivityLogger.logAction(this, isUpdateMode ? "Updated Batch" : "Added Batch", "ID: " + batchId + ", Name: " + batchName);
+                                    Toast.makeText(ManageBatchesActivity.this, isUpdateMode ? "Batch updated successfully" : "Batch saved successfully", Toast.LENGTH_SHORT).show();
+                                    closeAddBatchForm();
+                                    fetchBatchesFromFirestore(); // Refresh list
+                                    btnSaveBatch.setEnabled(true);
+                                    btnSaveBatch.setText("Save Batch");
+                                })
+                                .addOnFailureListener(e -> {
+                                    Toast.makeText(ManageBatchesActivity.this, "Failed to save to Degree Batches: " + e.getMessage(), Toast.LENGTH_SHORT).show();
+                                    btnSaveBatch.setEnabled(true);
+                                    btnSaveBatch.setText("Save Batch");
+                                });
                     })
                     .addOnFailureListener(e -> {
                         Toast.makeText(ManageBatchesActivity.this, "Failed to save: " + e.getMessage(), Toast.LENGTH_SHORT).show();
@@ -315,23 +316,133 @@ public class ManageBatchesActivity extends AppCompatActivity {
         btnSaveBatch.setText("Save Batch");
     }
 
+    private void performCascadedBatchDelete(Batch batch) {
+        Toast.makeText(this, "Deleting batch and cascading related data...", Toast.LENGTH_LONG).show();
+        String programId = batch.getProgramId();
+        String batchId = batch.getBatchId();
+        String batchName = batch.getBatchName();
+        String batchDocPath = batch.getDocId(); // The actual document ID in Firestore
+
+        // If for some reason docId is missing or equals batchId, fallback to consistent naming
+        if (batchDocPath == null || batchDocPath.isEmpty() || batchDocPath.equals(batchId)) {
+            batchDocPath = programId + "(" + batchName + ")";
+        }
+
+        final String finalBatchDocPath = batchDocPath;
+
+        List<com.google.android.gms.tasks.Task<Void>> deletionTasks = new ArrayList<>();
+
+        // 1. Delete batch documents
+        deletionTasks.add(db.collection("Batches").document(finalBatchDocPath).delete());
+        deletionTasks.add(db.collection("Degrees").document(programId).collection("Batches").document(finalBatchDocPath).delete());
+
+        // 2. Fetch direct semesters under Degrees/{programId}/Semesters and check batchId or docId starts with batchDocPath
+        db.collection("Degrees").document(programId).collection("Semesters").get()
+                .addOnSuccessListener(semWebSnaps -> {
+                    for (com.google.firebase.firestore.DocumentSnapshot semDoc : semWebSnaps) {
+                        String bId = semDoc.getString("batchId");
+                        if (batchId.equals(bId) || semDoc.getId().startsWith(finalBatchDocPath + "_")) {
+                            deletionTasks.add(semDoc.getReference().delete());
+                        }
+                    }
+
+                    // 3. Fetch direct modules under Degrees/{programId}/Modules and check batchId or docId starts with batchDocPath
+                    db.collection("Degrees").document(programId).collection("Modules").get()
+                            .addOnSuccessListener(modWebSnaps -> {
+                                for (com.google.firebase.firestore.DocumentSnapshot modDoc : modWebSnaps) {
+                                    String bId = modDoc.getString("batchId");
+                                    if (batchId.equals(bId) || modDoc.getId().startsWith(finalBatchDocPath + "_")) {
+                                        deletionTasks.add(modDoc.getReference().delete());
+                                    }
+                                }
+
+                                // 4. Fetch collectionGroup "Semesters" and "Semester IDs"
+                                db.collectionGroup("Semesters").get()
+                                        .addOnSuccessListener(semCGSnaps -> {
+                                            for (com.google.firebase.firestore.DocumentSnapshot semCGDoc : semCGSnaps) {
+                                                String bId = semCGDoc.getString("batchId");
+                                                if (batchId.equals(bId)) {
+                                                    deletionTasks.add(semCGDoc.getReference().delete());
+                                                }
+                                            }
+
+                                            db.collectionGroup("Semester IDs").get()
+                                                    .addOnSuccessListener(semLegacySnaps -> {
+                                                        for (com.google.firebase.firestore.DocumentSnapshot semLegDoc : semLegacySnaps) {
+                                                            String bId = semLegDoc.getString("batchId");
+                                                            if (batchId.equals(bId)) {
+                                                                deletionTasks.add(semLegDoc.getReference().delete());
+                                                            }
+                                                        }
+
+                                                        // 5. Fetch collectionGroup "Modules" and "Module IDs"
+                                                        db.collectionGroup("Modules").get()
+                                                                .addOnSuccessListener(modCGSnaps -> {
+                                                                    for (com.google.firebase.firestore.DocumentSnapshot modCGDoc : modCGSnaps) {
+                                                                        String bId = modCGDoc.getString("batchId");
+                                                                        if (batchId.equals(bId)) {
+                                                                            deletionTasks.add(modCGDoc.getReference().delete());
+                                                                        }
+                                                                    }
+
+                                                                    db.collectionGroup("Module IDs").get()
+                                                                            .addOnSuccessListener(modLegacySnaps -> {
+                                                                                for (com.google.firebase.firestore.DocumentSnapshot modLegDoc : modLegacySnaps) {
+                                                                                    String bId = modLegDoc.getString("batchId");
+                                                                                    if (batchId.equals(bId)) {
+                                                                                        deletionTasks.add(modLegDoc.getReference().delete());
+                                                                                    }
+                                                                                }
+
+                                                                                // 6. Clean up students associated with this batch
+                                                                                db.collection("Students").document(finalBatchDocPath).collection("Student IDs").get()
+                                                                                        .addOnSuccessListener(stuSnaps -> {
+                                                                                            for (com.google.firebase.firestore.DocumentSnapshot stuDoc : stuSnaps) {
+                                                                                                String studentId = stuDoc.getId();
+                                                                                                deletionTasks.add(db.collection("AllStudents").document(studentId).delete());
+                                                                                                deletionTasks.add(stuDoc.getReference().delete());
+                                                                                            }
+
+                                                                                            // Delete parent Student document
+                                                                                            deletionTasks.add(db.collection("Students").document(finalBatchDocPath).delete());
+
+                                                                                            // Run all deletions
+                                                                                            com.google.android.gms.tasks.Tasks.whenAllComplete(deletionTasks)
+                                                                                                    .addOnCompleteListener(allDone -> {
+                                                                                                        ActivityLogger.logAction(this, "Cascaded Deleted Batch", "Batch: " + batchId + " (" + batchName + ")");
+                                                                                                        Toast.makeText(this, "Batch and all associated data deleted successfully!", Toast.LENGTH_LONG).show();
+                                                                                                        fetchBatchesFromFirestore();
+                                                                                                        closeAddBatchForm();
+                                                                                                    });
+                                                                                        });
+                                                                            });
+                                                                });
+                                                    });
+                                        });
+                            });
+                });
+    }
+
     // Simple inner class to hold batch data
     public static class Batch {
         private String programId;
         private String batchId;
         private String batchName;
         private String intakeYear;
+        private String docId;
 
-        public Batch(String programId, String batchId, String batchName, String intakeYear) {
+        public Batch(String programId, String batchId, String batchName, String intakeYear, String docId) {
             this.programId = programId;
             this.batchId = batchId;
             this.batchName = batchName;
             this.intakeYear = intakeYear;
+            this.docId = docId;
         }
 
         public String getProgramId() { return programId; }
         public String getBatchId() { return batchId; }
         public String getBatchName() { return batchName; }
         public String getIntakeYear() { return intakeYear; }
+        public String getDocId() { return docId; }
     }
 }

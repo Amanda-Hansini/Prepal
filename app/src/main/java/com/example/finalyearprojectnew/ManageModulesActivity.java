@@ -657,6 +657,20 @@ public class ManageModulesActivity extends AppCompatActivity {
                 return;
             }
 
+            double creditVal;
+            try {
+                creditVal = Double.parseDouble(credits);
+            } catch (NumberFormatException e) {
+                etCredits.setError("Credits must be a valid number!");
+                etCredits.requestFocus();
+                return;
+            }
+            if (creditVal < 1.0) {
+                etCredits.setError("Credits must be at least 1!");
+                etCredits.requestFocus();
+                return;
+            }
+
             Toast.makeText(this, "Saving Module...", Toast.LENGTH_SHORT).show();
             btnSaveModule.setEnabled(false);
 
@@ -819,9 +833,14 @@ public class ManageModulesActivity extends AppCompatActivity {
                             continue;
                         }
                         
-                        String credits = "0";
+                        String credits = "3";
                         if (tokens.length >= 5 && !tokens[4].trim().isEmpty()) {
-                            credits = tokens[4].trim();
+                            try {
+                                double c = Double.parseDouble(tokens[4].trim());
+                                if (c >= 1.0) {
+                                    credits = tokens[4].trim();
+                                }
+                            } catch (NumberFormatException ignored) {}
                         }
                         
                         String degreeId = moduleId.split("\\s+")[0];

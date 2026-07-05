@@ -232,128 +232,201 @@ public class ManageDegreesActivity extends AppCompatActivity {
     private void performCascadedDelete(String degreeId) {
         android.widget.Toast.makeText(this, "Deleting degree and cascading related data...", android.widget.Toast.LENGTH_LONG).show();
         FirebaseFirestore db = FirebaseFirestore.getInstance();
-        
-        // Step 1: Query Batches associated with this program
-        db.collection("Batches")
-                .whereEqualTo("programId", degreeId)
-                .get()
-                .addOnSuccessListener(batchSnapshots -> {
+
+        // We will collect all async queries first
+        List<com.google.android.gms.tasks.Task<?>> queryTasks = new ArrayList<>();
+
+        // 1. Fetch batches for this degree
+        com.google.android.gms.tasks.Task<com.google.firebase.firestore.QuerySnapshot> fetchBatches = 
+                db.collection("Batches").whereEqualTo("programId", degreeId).get();
+        queryTasks.add(fetchBatches);
+
+        // 2. Fetch semesters under Degrees/{degreeId}/Semesters
+        com.google.android.gms.tasks.Task<com.google.firebase.firestore.QuerySnapshot> fetchSemestersDirect = 
+                db.collection("Degrees").document(degreeId).collection("Semesters").get();
+        queryTasks.add(fetchSemestersDirect);
+
+        // 3. Fetch modules under Degrees/{degreeId}/Modules
+        com.google.android.gms.tasks.Task<com.google.firebase.firestore.QuerySnapshot> fetchModulesDirect = 
+                db.collection("Degrees").document(degreeId).collection("Modules").get();
+        queryTasks.add(fetchModulesDirect);
+
+        // 4. Fetch all semesters from collectionGroups
+        com.google.android.gms.tasks.Task<com.google.firebase.firestore.QuerySnapshot> fetchSemestersCG = 
+                db.collectionGroup("Semesters").get();
+        queryTasks.add(fetchSemestersCG);
+
+        com.google.android.gms.tasks.Task<com.google.firebase.firestore.QuerySnapshot> fetchSemestersLegacy = 
+                db.collectionGroup("Semester IDs").get();
+        queryTasks.add(fetchSemestersLegacy);
+
+        // 5. Fetch all modules from collectionGroups
+        com.google.android.gms.tasks.Task<com.google.firebase.firestore.QuerySnapshot> fetchModulesCG = 
+                db.collectionGroup("Modules").get();
+        queryTasks.add(fetchModulesCG);
+
+        com.google.android.gms.tasks.Task<com.google.firebase.firestore.QuerySnapshot> fetchModulesLegacy = 
+                db.collectionGroup("Module IDs").get();
+        queryTasks.add(fetchModulesLegacy);
+
+        // 6. Fetch AllStudents
+        com.google.android.gms.tasks.Task<com.google.firebase.firestore.QuerySnapshot> fetchAllStudents = 
+                db.collection("AllStudents").get();
+        queryTasks.add(fetchAllStudents);
+
+        // Wait for all initial queries to complete
+        com.google.android.gms.tasks.Tasks.whenAllComplete(queryTasks)
+                .addOnSuccessListener(aVoid -> {
                     List<String> batchIds = new ArrayList<>();
                     List<String> batchDocPaths = new ArrayList<>();
-                    for (com.google.firebase.firestore.DocumentSnapshot doc : batchSnapshots) {
-                        String bId = doc.getString("batchId");
-                        if (bId != null) batchIds.add(bId);
-                        batchDocPaths.add(doc.getId()); // programId(batchName)
+                    
+                    if (fetchBatches.isSuccessful() && fetchBatches.getResult() != null) {
+                        for (com.google.firebase.firestore.DocumentSnapshot doc : fetchBatches.getResult()) {
+                            String bId = doc.getString("batchId");
+                            if (bId != null) batchIds.add(bId);
+                            batchDocPaths.add(doc.getId());
+                        }
                     }
 
-                    // We will execute a series of deletion tasks and compile them
                     List<com.google.android.gms.tasks.Task<Void>> deletionTasks = new ArrayList<>();
-                    
-                    // A. Delete main batches from Batches collection
+                    List<com.google.android.gms.tasks.Task<?>> studentFetchTasks = new ArrayList<>();
+
+                    // A. Delete Batches
                     for (String docPath : batchDocPaths) {
                         deletionTasks.add(db.collection("Batches").document(docPath).delete());
-                    }
-
-                    // B. Delete from Degrees/{degreeId}/Batches
-                    for (String docPath : batchDocPaths) {
                         deletionTasks.add(db.collection("Degrees").document(degreeId).collection("Batches").document(docPath).delete());
                     }
 
-                    // C. Delete Semesters (Location A and Location B)
-                    // Location A: Degrees/{degreeId}/Semesters
-                    db.collection("Degrees").document(degreeId).collection("Semesters").get()
-                            .addOnSuccessListener(semWebSnaps -> {
-                                for (com.google.firebase.firestore.DocumentSnapshot semDoc : semWebSnaps) {
-                                    deletionTasks.add(semDoc.getReference().delete());
-                                }
+                    // B. Delete Semesters (direct)
+                    if (fetchSemestersDirect.isSuccessful() && fetchSemestersDirect.getResult() != null) {
+                        for (com.google.firebase.firestore.DocumentSnapshot doc : fetchSemestersDirect.getResult()) {
+                            deletionTasks.add(doc.getReference().delete());
+                        }
+                    }
 
-                                // Location B: Semesters/{degreeId}/Batches/{batchId}/Semester IDs/{semesterId}
-                                for (String bId : batchIds) {
-                                    db.collection("Semesters").document(degreeId)
-                                            .collection("Batches").document(bId)
-                                            .collection("Semester IDs").get()
-                                            .addOnSuccessListener(semMobSnaps -> {
-                                                for (com.google.firebase.firestore.DocumentSnapshot semDoc : semMobSnaps) {
-                                                    deletionTasks.add(semDoc.getReference().delete());
-                                                }
-                                                
-                                                // D. Delete Modules (Location A and Location B)
-                                                // Location A: Degrees/{degreeId}/Modules
-                                                db.collection("Degrees").document(degreeId).collection("Modules").get()
-                                                        .addOnSuccessListener(modWebSnaps -> {
-                                                            for (com.google.firebase.firestore.DocumentSnapshot modDoc : modWebSnaps) {
-                                                                deletionTasks.add(modDoc.getReference().delete());
-                                                            }
+                    // C. Delete Semesters from collectionGroups (filter by degreeId or batchId)
+                    if (fetchSemestersCG.isSuccessful() && fetchSemestersCG.getResult() != null) {
+                        for (com.google.firebase.firestore.DocumentSnapshot doc : fetchSemestersCG.getResult()) {
+                            String dId = doc.getString("degreeId");
+                            String bId = doc.getString("batchId");
+                            String[] pathParts = doc.getReference().getPath().split("/");
+                            String parentDegId = pathParts.length > 1 ? pathParts[1] : "";
+                            
+                            if (degreeId.equalsIgnoreCase(dId) || degreeId.equalsIgnoreCase(parentDegId) || (bId != null && batchIds.contains(bId))) {
+                                deletionTasks.add(doc.getReference().delete());
+                            }
+                        }
+                    }
 
-                                                            // Location B: Modules/{batchId}_{degreeId}_{semesterId}/Module IDs/{moduleId}
-                                                            db.collectionGroup("Module IDs")
-                                                                    .whereEqualTo("degreeId", degreeId)
-                                                                    .get()
-                                                                    .addOnSuccessListener(modMobSnaps -> {
-                                                                        for (com.google.firebase.firestore.DocumentSnapshot modDoc : modMobSnaps) {
-                                                                            deletionTasks.add(modDoc.getReference().delete());
-                                                                        }
+                    if (fetchSemestersLegacy.isSuccessful() && fetchSemestersLegacy.getResult() != null) {
+                        for (com.google.firebase.firestore.DocumentSnapshot doc : fetchSemestersLegacy.getResult()) {
+                            String dId = doc.getString("degreeId");
+                            String bId = doc.getString("batchId");
+                            String[] pathParts = doc.getReference().getPath().split("/");
+                            String parentDegId = pathParts.length > 1 ? pathParts[1] : "";
 
-                                                                        // E. Delete Students (Nested Students + Flat AllStudents)
-                                                                        // Nested: Students/{batchDocPath}/Student IDs/
-                                                                        for (String docPath : batchDocPaths) {
-                                                                            db.collection("Students").document(docPath).collection("Student IDs").get()
-                                                                                    .addOnSuccessListener(stuSnaps -> {
-                                                                                        for (com.google.firebase.firestore.DocumentSnapshot stuDoc : stuSnaps) {
-                                                                                            deletionTasks.add(stuDoc.getReference().delete());
-                                                                                        }
-                                                                                        
-                                                                                        // Flat AllStudents: where batchId is in the list of deleted batch IDs
-                                                                                        if (!batchIds.isEmpty()) {
-                                                                                            db.collection("AllStudents")
-                                                                                                    .whereIn("batchId", batchIds)
-                                                                                                    .get()
-                                                                                                    .addOnSuccessListener(allStuSnaps -> {
-                                                                                                        for (com.google.firebase.firestore.DocumentSnapshot flatDoc : allStuSnaps) {
-                                                                                                            deletionTasks.add(flatDoc.getReference().delete());
-                                                                                                        }
+                            if (degreeId.equalsIgnoreCase(dId) || degreeId.equalsIgnoreCase(parentDegId) || (bId != null && batchIds.contains(bId))) {
+                                deletionTasks.add(doc.getReference().delete());
+                            }
+                        }
+                    }
 
-                                                                                                        // F. Finally, delete the Degree document itself
-                                                                                                        deletionTasks.add(db.collection("Degrees").document(degreeId).delete());
+                    // D. Delete Modules (direct)
+                    if (fetchModulesDirect.isSuccessful() && fetchModulesDirect.getResult() != null) {
+                        for (com.google.firebase.firestore.DocumentSnapshot doc : fetchModulesDirect.getResult()) {
+                            deletionTasks.add(doc.getReference().delete());
+                        }
+                    }
 
-                                                                                                        // Run all tasks in parallel
-                                                                                                        com.google.android.gms.tasks.Tasks.whenAllComplete(deletionTasks)
-                                                                                                                .addOnCompleteListener(allDone -> {
-                                                                                                                    ActivityLogger.logAction(this, "Cascaded Deleted Degree", "Degree: " + degreeId + " (and all associated data)");
-                                                                                                                    Toast.makeText(this, "Degree and all associated data deleted successfully!", Toast.LENGTH_LONG).show();
-                                                                                                                    loadDegrees();
-                                                                                                                    closeAddProgramForm();
-                                                                                                                });
-                                                                                                    });
-                                                                                        } else {
-                                                                                            // No batches, just delete Degree and finalize
-                                                                                            deletionTasks.add(db.collection("Degrees").document(degreeId).delete());
-                                                                                            com.google.android.gms.tasks.Tasks.whenAllComplete(deletionTasks)
-                                                                                                    .addOnCompleteListener(allDone -> {
-                                                                                                        ActivityLogger.logAction(this, "Deleted Degree (No Batches)", "Degree: " + degreeId);
-                                                                                                        Toast.makeText(this, "Degree deleted successfully!", Toast.LENGTH_SHORT).show();
-                                                                                                        loadDegrees();
-                                                                                                        closeAddProgramForm();
-                                                                                                    });
-                                                                                        }
-                                                                                    });
-                                                                        }
-                                                                        if (batchDocPaths.isEmpty()) {
-                                                                            // No batches at all, delete degree
-                                                                            deletionTasks.add(db.collection("Degrees").document(degreeId).delete());
-                                                                            com.google.android.gms.tasks.Tasks.whenAllComplete(deletionTasks)
-                                                                                    .addOnCompleteListener(allDone -> {
-                                                                                        ActivityLogger.logAction(this, "Deleted Degree (No Batches)", "Degree: " + degreeId);
-                                                                                        Toast.makeText(this, "Degree deleted successfully!", Toast.LENGTH_SHORT).show();
-                                                                                        loadDegrees();
-                                                                                        closeAddProgramForm();
-                                                                                    });
-                                                                        }
-                                                                    });
-                                                        });
+                    // E. Delete Modules from collectionGroups (filter by degreeId or batchId)
+                    if (fetchModulesCG.isSuccessful() && fetchModulesCG.getResult() != null) {
+                        for (com.google.firebase.firestore.DocumentSnapshot doc : fetchModulesCG.getResult()) {
+                            String dId = doc.getString("degreeId");
+                            String bId = doc.getString("batchId");
+                            String[] pathParts = doc.getReference().getPath().split("/");
+                            String parentDegId = pathParts.length > 1 ? pathParts[1] : "";
+
+                            if (degreeId.equalsIgnoreCase(dId) || degreeId.equalsIgnoreCase(parentDegId) || (bId != null && batchIds.contains(bId))) {
+                                deletionTasks.add(doc.getReference().delete());
+                            }
+                        }
+                    }
+
+                    if (fetchModulesLegacy.isSuccessful() && fetchModulesLegacy.getResult() != null) {
+                        for (com.google.firebase.firestore.DocumentSnapshot doc : fetchModulesLegacy.getResult()) {
+                            String dId = doc.getString("degreeId");
+                            String bId = doc.getString("batchId");
+                            String[] pathParts = doc.getReference().getPath().split("/");
+                            String parentDegId = pathParts.length > 1 ? pathParts[1] : "";
+
+                            if (degreeId.equalsIgnoreCase(dId) || degreeId.equalsIgnoreCase(parentDegId) || (bId != null && batchIds.contains(bId))) {
+                                deletionTasks.add(doc.getReference().delete());
+                            }
+                        }
+                    }
+
+                    // F. Clean up Students in AllStudents
+                    if (fetchAllStudents.isSuccessful() && fetchAllStudents.getResult() != null) {
+                        for (com.google.firebase.firestore.DocumentSnapshot doc : fetchAllStudents.getResult()) {
+                            String bId = doc.getString("batchId");
+                            if (bId != null && batchIds.contains(bId)) {
+                                deletionTasks.add(doc.getReference().delete());
+                            }
+                        }
+                    }
+
+                    // G. Fetch students nested inside Students/{batchDocPath}/Student IDs
+                    for (String docPath : batchDocPaths) {
+                        studentFetchTasks.add(db.collection("Students").document(docPath).collection("Student IDs").get());
+                    }
+
+                    if (!studentFetchTasks.isEmpty()) {
+                        com.google.android.gms.tasks.Tasks.whenAllComplete(studentFetchTasks)
+                                .addOnSuccessListener(fetchResults -> {
+                                    for (com.google.android.gms.tasks.Task<?> t : studentFetchTasks) {
+                                        if (t.isSuccessful() && t.getResult() instanceof com.google.firebase.firestore.QuerySnapshot) {
+                                            com.google.firebase.firestore.QuerySnapshot stuSnap = 
+                                                    (com.google.firebase.firestore.QuerySnapshot) t.getResult();
+                                            for (com.google.firebase.firestore.DocumentSnapshot stuDoc : stuSnap) {
+                                                deletionTasks.add(stuDoc.getReference().delete());
+                                            }
+                                        }
+                                    }
+
+                                    // Delete parent Students documents
+                                    for (String docPath : batchDocPaths) {
+                                        deletionTasks.add(db.collection("Students").document(docPath).delete());
+                                    }
+
+                                    // Add the main Degree document deletion
+                                    deletionTasks.add(db.collection("Degrees").document(degreeId).delete());
+                                    deletionTasks.add(db.collection("Semesters").document(degreeId).delete());
+
+                                    // Execute all deletions in parallel
+                                    com.google.android.gms.tasks.Tasks.whenAllComplete(deletionTasks)
+                                            .addOnCompleteListener(allDone -> {
+                                                ActivityLogger.logAction(this, "Cascaded Deleted Degree", "Degree: " + degreeId);
+                                                Toast.makeText(this, "Degree and all associated data deleted successfully!", Toast.LENGTH_LONG).show();
+                                                loadDegrees();
+                                                closeAddProgramForm();
                                             });
-                                }
-                            });
+                                });
+                    } else {
+                        // No nested student collections to fetch, just delete degree and finalize
+                        deletionTasks.add(db.collection("Degrees").document(degreeId).delete());
+                        deletionTasks.add(db.collection("Semesters").document(degreeId).delete());
+
+                        com.google.android.gms.tasks.Tasks.whenAllComplete(deletionTasks)
+                                .addOnCompleteListener(allDone -> {
+                                    ActivityLogger.logAction(this, "Cascaded Deleted Degree", "Degree: " + degreeId);
+                                    Toast.makeText(this, "Degree deleted successfully!", Toast.LENGTH_SHORT).show();
+                                    loadDegrees();
+                                    closeAddProgramForm();
+                                });
+                    }
+                })
+                .addOnFailureListener(e -> {
+                    Toast.makeText(this, "Failed during cascading delete queries: " + e.getMessage(), Toast.LENGTH_LONG).show();
                 });
     }
 

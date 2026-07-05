@@ -1,8 +1,8 @@
 import React, { useState } from 'react';
 import { motion } from 'framer-motion';
-import { LogIn, Mail, Lock, Eye, EyeOff, AlertCircle, Loader2, User, Shield } from 'lucide-react';
+import { LogIn, Mail, Lock, Eye, EyeOff, AlertCircle, Loader2, User, Shield, CheckCircle } from 'lucide-react';
 import { db } from '../firebase';
-import { doc, getDoc, setDoc, collection, query, where, getDocs } from 'firebase/firestore';
+import { doc, getDoc, setDoc, collection, query, where, getDocs, updateDoc, addDoc } from 'firebase/firestore';
 import { hashPassword } from '../utils/security';
 
 const Login = ({ onLogin }) => {
@@ -24,11 +24,13 @@ const Login = ({ onLogin }) => {
 
   // Common UI states
   const [error, setError] = useState('');
+  const [success, setSuccess] = useState('');
   const [isLoading, setIsLoading] = useState(false);
 
   const handleLogin = async (e) => {
     e.preventDefault();
     setError('');
+    setSuccess('');
     setIsLoading(true);
 
     try {
@@ -39,9 +41,10 @@ const Login = ({ onLogin }) => {
       const adminDoc = await getDoc(adminDocRef);
 
       if (adminDoc.exists()) {
-        const storedHashedPassword = adminDoc.data().hashed_password;
+        const adminData = adminDoc.data();
+        const storedHashedPassword = adminData.hashed_password;
         if (enteredHashedPassword === storedHashedPassword) {
-          onLogin({ adminId: adminDoc.id, ...adminDoc.data() });
+          onLogin({ adminId: adminDoc.id, ...adminData });
           return;
         } else {
           setError("Invalid password. Please try again.");
@@ -93,6 +96,12 @@ const Login = ({ onLogin }) => {
       return;
     }
 
+    if (!cleanEmail.endsWith("@saegis.ac.lk")) {
+      setError("Registration failed. Invalid email address.");
+      setIsLoading(false);
+      return;
+    }
+
     if (signUpPassword !== signUpConfirmPassword) {
       setError("Passwords do not match.");
       setIsLoading(false);
@@ -111,7 +120,7 @@ const Login = ({ onLogin }) => {
       const adminDoc = await getDoc(adminDocRef);
 
       if (adminDoc.exists()) {
-        setError("Admin ID already exists. Please choose a different ID.");
+        setError("Registration failed. Invalid ID or Email.");
         setIsLoading(false);
         return;
       }
@@ -121,7 +130,7 @@ const Login = ({ onLogin }) => {
       const querySnapshot = await getDocs(emailQuery);
 
       if (!querySnapshot.empty) {
-        setError("Email is already registered. Please login or choose another email.");
+        setError("Registration failed. Invalid ID or Email.");
         setIsLoading(false);
         return;
       }
@@ -140,8 +149,16 @@ const Login = ({ onLogin }) => {
 
       await setDoc(adminDocRef, newAdminData);
 
-      // Auto login newly registered admin
-      onLogin({ adminId: cleanAdminId, ...newAdminData });
+      setSuccess("Registration successful! Please log in using your password.");
+      setUserId(cleanAdminId);
+      setIsSignUp(false);
+      
+      // Clear Sign Up fields
+      setSignUpAdminId('');
+      setSignUpFullName('');
+      setSignUpEmail('');
+      setSignUpPassword('');
+      setSignUpConfirmPassword('');
     } catch (err) {
       console.error("Sign Up error:", err);
       setError("System Error: Failed to register Administrator account.");
@@ -150,6 +167,28 @@ const Login = ({ onLogin }) => {
     }
   };
 
+  // Password Strength Logic
+  const calculateStrength = (password) => {
+    let score = 0;
+    if (!password) return 0;
+    if (password.length >= 8) score += 1;
+    if (/[A-Z]/.test(password)) score += 1;
+    if (/[a-z]/.test(password)) score += 1;
+    if (/[0-9]/.test(password)) score += 1;
+    if (/[^A-Za-z0-9]/.test(password)) score += 1;
+    return score;
+  };
+
+  const strengthScore = calculateStrength(signUpPassword);
+  
+  const getStrengthConfig = (score) => {
+    if (score === 0) return { label: '', color: 'transparent', width: '0%' };
+    if (score <= 2) return { label: 'Weak', color: '#ef4444', width: '33%' };
+    if (score === 3 || score === 4) return { label: 'Good', color: '#eab308', width: '66%' };
+    return { label: 'Strong', color: '#22c55e', width: '100%' };
+  };
+
+  const strengthConfig = getStrengthConfig(strengthScore);
   return (
     <div className="login-page">
       <div className="decor-top-right"></div>
@@ -177,7 +216,7 @@ const Login = ({ onLogin }) => {
             <button 
               type="button" 
               className={`toggle-tab ${!isSignUp ? 'active' : ''}`}
-              onClick={() => { setIsSignUp(false); setError(''); }}
+              onClick={() => { setIsSignUp(false); setError(''); setSuccess(''); }}
               disabled={isLoading}
             >
               Login
@@ -185,7 +224,7 @@ const Login = ({ onLogin }) => {
             <button 
               type="button" 
               className={`toggle-tab ${isSignUp ? 'active' : ''}`}
-              onClick={() => { setIsSignUp(true); setError(''); }}
+              onClick={() => { setIsSignUp(true); setError(''); setSuccess(''); }}
               disabled={isLoading}
             >
               Sign Up
@@ -210,6 +249,17 @@ const Login = ({ onLogin }) => {
             </motion.div>
           )}
 
+          {success && (
+            <motion.div 
+              initial={{ opacity: 0, scale: 0.95 }}
+              animate={{ opacity: 1, scale: 1 }}
+              className="success-message"
+            >
+              <CheckCircle size={18} />
+              <span>{success}</span>
+            </motion.div>
+          )}
+
           {!isSignUp ? (
             // LOGIN FORM
             <form onSubmit={handleLogin} className="login-form">
@@ -225,6 +275,7 @@ const Login = ({ onLogin }) => {
                       onChange={(e) => setUserId(e.target.value)}
                       required 
                       disabled={isLoading}
+                      autoComplete="off"
                     />
                   </div>
                 </div>
@@ -242,6 +293,7 @@ const Login = ({ onLogin }) => {
                       onChange={(e) => setPassword(e.target.value)}
                       required 
                       disabled={isLoading}
+                      autoComplete="new-password"
                     />
                   </div>
                   <button 
@@ -268,11 +320,12 @@ const Login = ({ onLogin }) => {
                     <label>Admin ID (Username)</label>
                     <input 
                       type="text" 
-                      placeholder="e.g. ADM-1002"
+                      placeholder="Enter your employee ID"
                       value={signUpAdminId}
                       onChange={(e) => setSignUpAdminId(e.target.value)}
                       required 
                       disabled={isLoading}
+                      autoComplete="off"
                     />
                   </div>
                 </div>
@@ -285,11 +338,12 @@ const Login = ({ onLogin }) => {
                     <label>Full Name</label>
                     <input 
                       type="text" 
-                      placeholder="e.g. John Doe"
+                      placeholder="Enter your full official name"
                       value={signUpFullName}
                       onChange={(e) => setSignUpFullName(e.target.value)}
                       required 
                       disabled={isLoading}
+                      autoComplete="off"
                     />
                   </div>
                 </div>
@@ -302,11 +356,22 @@ const Login = ({ onLogin }) => {
                     <label>Email Address</label>
                     <input 
                       type="email" 
-                      placeholder="e.g. johndoe@saegis.ac.lk"
+                      placeholder="Enter your email address"
                       value={signUpEmail}
-                      onChange={(e) => setSignUpEmail(e.target.value)}
+                      onChange={(e) => {
+                        setSignUpEmail(e.target.value);
+                        if (error && error.includes("email")) setError('');
+                      }}
+                      onBlur={(e) => {
+                        if (e.target.value && !e.target.value.toLowerCase().trim().endsWith("@saegis.ac.lk")) {
+                          setError("Registration failed. Invalid email address.");
+                        }
+                      }}
+                      pattern=".*@saegis\.ac\.lk$"
+                      title="Invalid email address."
                       required 
                       disabled={isLoading}
+                      autoComplete="off"
                     />
                   </div>
                 </div>
@@ -324,6 +389,7 @@ const Login = ({ onLogin }) => {
                       onChange={(e) => setSignUpPassword(e.target.value)}
                       required 
                       disabled={isLoading}
+                      autoComplete="new-password"
                     />
                   </div>
                   <button 
@@ -334,6 +400,16 @@ const Login = ({ onLogin }) => {
                     {showPassword ? <EyeOff size={20} /> : <Eye size={20} />}
                   </button>
                 </div>
+                {signUpPassword && (
+                  <div style={{ marginTop: '8px' }}>
+                    <div style={{ height: '4px', background: 'var(--border-color)', borderRadius: '2px', overflow: 'hidden' }}>
+                      <div style={{ height: '100%', width: strengthConfig.width, background: strengthConfig.color, transition: 'all 0.3s' }}></div>
+                    </div>
+                    <p style={{ fontSize: '0.75rem', marginTop: '4px', color: strengthConfig.color, fontWeight: '600', textAlign: 'right' }}>
+                      {strengthConfig.label}
+                    </p>
+                  </div>
+                )}
               </div>
 
               <div className="field-group">
@@ -348,6 +424,7 @@ const Login = ({ onLogin }) => {
                       onChange={(e) => setSignUpConfirmPassword(e.target.value)}
                       required 
                       disabled={isLoading}
+                      autoComplete="new-password"
                     />
                   </div>
                   <button 
@@ -361,7 +438,7 @@ const Login = ({ onLogin }) => {
               </div>
 
               <button type="submit" className="login-button-gradient" disabled={isLoading}>
-                {isLoading ? <Loader2 className="spinner" size={24} /> : "Register & Log In"}
+                {isLoading ? <Loader2 className="spinner" size={24} /> : "Register"}
               </button>
             </form>
           )}
@@ -528,6 +605,20 @@ const Login = ({ onLogin }) => {
         .error-message {
           background: rgba(239, 68, 68, 0.1);
           color: #ef4444;
+          padding: 12px 16px;
+          border-radius: 12px;
+          display: flex;
+          align-items: center;
+          gap: 10px;
+          margin-bottom: 24px;
+          font-size: 0.9rem;
+          font-weight: 600;
+          text-align: left;
+        }
+
+        .success-message {
+          background: rgba(34, 197, 94, 0.1);
+          color: #22c55e;
           padding: 12px 16px;
           border-radius: 12px;
           display: flex;

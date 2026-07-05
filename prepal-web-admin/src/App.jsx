@@ -12,6 +12,7 @@ import ReportPage from './pages/ReportPage'
 import Profile from './pages/Profile'
 import { db } from './firebase'
 import { doc, onSnapshot } from 'firebase/firestore'
+import { Toaster } from 'react-hot-toast'
 
 function App() {
   const [isLoggedIn, setIsLoggedIn] = useState(false);
@@ -129,6 +130,17 @@ function App() {
           </svg>
         </div>
       </div>
+
+      <Toaster 
+        position="top-right"
+        toastOptions={{
+          style: {
+            borderRadius: '10px',
+            background: '#333',
+            color: '#fff',
+          },
+        }}
+      />
 
       <Sidebar activePage={currentPage} setPage={setCurrentPage} currentAdmin={currentAdmin} />
       <div className="main-content">

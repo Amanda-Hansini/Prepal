@@ -1,13 +1,15 @@
 import React, { useState, useEffect } from 'react';
+import toast from "react-hot-toast";
 import { motion, AnimatePresence } from 'framer-motion';
 import { 
   Search, Plus, ChevronRight, Check, X, ArrowLeft,
   Users, Edit2, Trash2, Home, Upload, UserPlus, GraduationCap
 } from 'lucide-react';
 import * as XLSX from 'xlsx';
-import { collection, getDocs, doc, deleteDoc, setDoc, writeBatch, query, where } from 'firebase/firestore';
+import { collection, getDocs, doc, deleteDoc, setDoc, writeBatch, query, where, collectionGroup } from 'firebase/firestore';
 import { db } from '../firebase';
 import { logActivity } from '../utils/activityLogger';
+import ConfirmModal from '../components/ConfirmModal';
 
 const BatchManager = ({ setPage }) => {
   const [batches, setBatches] = useState([]);
@@ -15,6 +17,7 @@ const BatchManager = ({ setPage }) => {
   const [searchQuery, setSearchQuery] = useState('');
   const [currentPage, setCurrentPage] = useState(1);
   const [isSaving, setIsSaving] = useState(false);
+  const [confirmConfig, setConfirmConfig] = useState({ isOpen: false, title: '', message: '', onConfirm: null });
 
   // Editing state for Batches
   const [editingBatchId, setEditingBatchId] = useState(null);
@@ -55,7 +58,7 @@ const BatchManager = ({ setPage }) => {
 
   const handleSaveBatch = async () => {
     if (!editingBatchData.batchId || !editingBatchData.batchName) {
-      alert("Batch ID and Name are required!");
+      toast.error("Batch ID and Name are required!")
       return;
     }
     setIsSaving(true);
@@ -77,37 +80,101 @@ const BatchManager = ({ setPage }) => {
       
       setBatches(prev => prev.map(b => b.docId === editingBatchId ? { ...b, ...editingBatchData } : b));
       setEditingBatchId(null);
-      alert("Batch updated successfully!");
+      toast.success("Batch updated successfully!")
     } catch (error) {
       console.error("Error updating batch:", error);
-      alert("Update failed: " + error.message);
+      toast.error("Update failed: " + error.message)
     } finally {
       setIsSaving(false);
     }
   };
 
   const handleDeleteBatch = async (batch) => {
-    if (!window.confirm(`Are you sure you want to delete batch ${batch.batchName}? This action cannot be undone.`)) return;
-    setIsSaving(true);
-    try {
-      const programId = batch.programId;
-      const batchDocPath = `${programId}(${batch.batchName})`;
+    setConfirmConfig({
+      isOpen: true,
+      title: 'Delete Batch',
+      message: `Are you sure you want to delete batch ${batch.batchName}? This action cannot be undone. All semesters, modules, and enrolled students for this batch will also be deleted.`,
+      onConfirm: async () => {
+        setConfirmConfig(prev => ({ ...prev, isOpen: false }));
+        setIsSaving(true);
+        try {
+          const programId = batch.programId;
+          const batchId = batch.batchId;
+          const batchName = batch.batchName;
+          const batchDocPath = `${programId}(${batchName})`;
 
-      const batchCommit = writeBatch(db);
-      batchCommit.delete(doc(db, 'Batches', batchDocPath));
-      batchCommit.delete(doc(db, 'Degrees', programId, 'Batches', batchDocPath));
+          const docsToDelete = new Map();
 
-      await batchCommit.commit();
-      await logActivity("Deleted Batch", `${batch.batchId}: ${batch.batchName}`);
+          // 1. Add batch documents (both global and nested)
+          const globalBatchRef = doc(db, 'Batches', batchDocPath);
+          const degreeBatchRef = doc(db, 'Degrees', programId, 'Batches', batchDocPath);
+          docsToDelete.set(globalBatchRef.path, globalBatchRef);
+          docsToDelete.set(degreeBatchRef.path, degreeBatchRef);
 
-      setBatches(prev => prev.filter(b => b.batchId !== batch.batchId));
-      alert("Batch deleted successfully!");
-    } catch (error) {
-      console.error("Error deleting batch:", error);
-      alert("Delete failed: " + error.message);
-    } finally {
-      setIsSaving(false);
-    }
+          // 2. Fetch semesters related to this batch
+          const directSemestersSnap = await getDocs(collection(db, 'Degrees', programId, 'Semesters'));
+          directSemestersSnap.docs.forEach(doc => {
+            const data = doc.data();
+            if (data.batchId === batchId || doc.id.startsWith(batchDocPath + '_')) {
+              docsToDelete.set(doc.ref.path, doc.ref);
+            }
+          });
+
+          const semestersSnapCG = await getDocs(collectionGroup(db, 'Semesters'));
+          const semestersSnapLegacy = await getDocs(collectionGroup(db, 'Semester IDs'));
+          [...semestersSnapCG.docs, ...semestersSnapLegacy.docs].forEach(doc => {
+            const data = doc.data();
+            if (data.batchId === batchId) {
+              docsToDelete.set(doc.ref.path, doc.ref);
+            }
+          });
+
+          // 3. Fetch modules related to this batch
+          const directModulesSnap = await getDocs(collection(db, 'Degrees', programId, 'Modules'));
+          directModulesSnap.docs.forEach(doc => {
+            const data = doc.data();
+            if (data.batchId === batchId || doc.id.startsWith(batchDocPath + '_')) {
+              docsToDelete.set(doc.ref.path, doc.ref);
+            }
+          });
+
+          const modulesSnapCG = await getDocs(collectionGroup(db, 'Modules'));
+          const modulesSnapLegacy = await getDocs(collectionGroup(db, 'Module IDs'));
+          [...modulesSnapCG.docs, ...modulesSnapLegacy.docs].forEach(doc => {
+            const data = doc.data();
+            if (data.batchId === batchId) {
+              docsToDelete.set(doc.ref.path, doc.ref);
+            }
+          });
+
+          // 4. Clean up students associated with this batch
+          const studentsSnap = await getDocs(collection(db, 'Students', batchDocPath, 'Student IDs'));
+          studentsSnap.forEach(studentDoc => {
+            const studentId = studentDoc.id;
+            const flatStudentRef = doc(db, 'AllStudents', studentId);
+            docsToDelete.set(flatStudentRef.path, flatStudentRef);
+            docsToDelete.set(studentDoc.ref.path, studentDoc.ref);
+          });
+          
+          const parentStudentRef = doc(db, 'Students', batchDocPath);
+          docsToDelete.set(parentStudentRef.path, parentStudentRef);
+
+          // 5. Delete all gathered documents
+          const deletePromises = Array.from(docsToDelete.values()).map(ref => deleteDoc(ref));
+          await Promise.all(deletePromises);
+
+          await logActivity("Deleted Batch", `${batchId}: ${batchName}`);
+
+          setBatches(prev => prev.filter(b => b.batchId !== batchId));
+          toast.success("Batch deleted successfully!")
+        } catch (error) {
+          console.error("Error deleting batch:", error);
+          toast.error("Delete failed: " + error.message)
+        } finally {
+          setIsSaving(false);
+        }
+      }
+    });
   };
 
   // Student Enrollment Logic
@@ -132,11 +199,24 @@ const BatchManager = ({ setPage }) => {
 
   const checkStudentIdsUnique = async (ids) => {
     const existingIds = [];
-    for (let i = 0; i < ids.length; i += 30) {
-      const chunk = ids.slice(i, i + 30);
+    const idsToSearch = [];
+    ids.forEach(id => {
+      const upper = id.toUpperCase();
+      const lower = id.toLowerCase();
+      if (!idsToSearch.includes(upper)) idsToSearch.push(upper);
+      if (!idsToSearch.includes(lower)) idsToSearch.push(lower);
+    });
+
+    for (let i = 0; i < idsToSearch.length; i += 30) {
+      const chunk = idsToSearch.slice(i, i + 30);
       const q = query(collection(db, 'AllStudents'), where('studentId', 'in', chunk));
       const snap = await getDocs(q);
-      snap.forEach(doc => existingIds.push(doc.data().studentId));
+      snap.forEach(doc => {
+        const existingId = doc.data().studentId;
+        if (!existingIds.includes(existingId)) {
+          existingIds.push(existingId);
+        }
+      });
     }
     return existingIds;
   };
@@ -175,26 +255,27 @@ const BatchManager = ({ setPage }) => {
         };
 
         const parsedStudents = data.map(row => ({
-          studentId: String(getValueByKeys(row, ['studentId', 'studentid', 'student id', 'student_id', 'id', 'student no', 'studentno', 'student_no'])).trim(),
+          studentId: String(getValueByKeys(row, ['studentId', 'studentid', 'student id', 'student_id', 'id', 'student no', 'studentno', 'student_no'])).trim().toUpperCase(),
           fullName: String(getValueByKeys(row, ['fullName', 'fullname', 'full name', 'full_name', 'name', 'studentname', 'student name'])).trim(),
           email: String(getValueByKeys(row, ['email', 'Email', 'University Email', 'university email', 'universityemail', 'university_email', 'universityEmail', 'UniversityEmail', 'email address', 'emailaddress', 'email_address', 'mail'])).trim(),
           password: String(getValueByKeys(row, ['password', 'pass']) || '123456').trim(),
           status: String(getValueByKeys(row, ['status']) || 'active').toLowerCase().trim()
         })).filter(s => s.studentId);
         setStudentList(parsedStudents);
-        alert(`Successfully parsed ${parsedStudents.length} students.`);
+        toast.success(`Successfully parsed ${parsedStudents.length} students.`)
       } catch (error) {
         console.error("Error parsing student file:", error);
-        alert("Failed to parse file. Please ensure it is a valid Excel or CSV.");
+        toast.error("Failed to parse file. Please ensure it is a valid Excel or CSV.")
       }
     };
     reader.readAsBinaryString(file);
   };
 
   const handleSaveSingleStudent = async () => {
-    const { studentId, fullName, email, password, status } = singleStudent;
+    const studentId = singleStudent.studentId.trim().toUpperCase();
+    const { fullName, email, password, status } = singleStudent;
     if (!studentId || !fullName || !email || !password) {
-      alert("Please fill all student fields.");
+      toast.error("Please fill all student fields.")
       return;
     }
 
@@ -202,7 +283,7 @@ const BatchManager = ({ setPage }) => {
     try {
       const existingIds = await checkStudentIdsUnique([studentId]);
       if (existingIds.length > 0) {
-        alert(`Error: Student ID "${studentId}" is already taken!`);
+        toast.error(`Error: Student ID "${studentId}" is already taken!`)
         setIsSaving(false);
         return;
       }
@@ -228,13 +309,13 @@ const BatchManager = ({ setPage }) => {
       await batchCommit.commit();
       await logActivity("Enrolled Student", `${studentId} (${fullName}) in Batch ${enrollmentBatch.batchName}`);
       
-      alert("Student enrolled successfully!");
+      toast.success("Student enrolled successfully!")
       setExistingStudents(prev => [...prev, studentData]);
       setSingleStudent({ studentId: '', fullName: '', email: '', password: '', status: 'active' });
       setEnrollmentTab('view');
     } catch (error) {
       console.error("Error saving single student:", error);
-      alert("Failed to enroll student: " + error.message);
+      toast.error("Failed to enroll student: " + error.message)
     } finally {
       setIsSaving(false);
     }
@@ -248,7 +329,7 @@ const BatchManager = ({ setPage }) => {
       const existingIds = await checkStudentIdsUnique(newIds);
       
       if (existingIds.length > 0) {
-        alert(`Duplicate Student IDs Detected!\n\nIDs already in use: ${existingIds.join(', ')}.`);
+        toast.error(`Duplicate Student IDs Detected!\n\nIDs already in use: ${existingIds.join(', ')}.`);
         setIsSaving(false);
         return;
       }
@@ -275,12 +356,12 @@ const BatchManager = ({ setPage }) => {
       
       await batchCommit.commit();
       await logActivity("Enrolled Students", `Bulk enrolled ${studentList.length} students into Batch ${enrollmentBatch.batchName}`);
-      alert(`Successfully enrolled ${studentList.length} students into ${enrollmentBatch.batchName}.`);
+      toast.success(`Successfully enrolled ${studentList.length} students into ${enrollmentBatch.batchName}.`)
       setIsEnrollmentModalOpen(false);
       setStudentList([]);
     } catch (error) {
       console.error("Error enrolling students:", error);
-      alert("Failed to enroll students: " + error.message);
+      toast.error("Failed to enroll students: " + error.message)
     } finally {
       setIsSaving(false);
     }
@@ -312,36 +393,43 @@ const BatchManager = ({ setPage }) => {
       
       setExistingStudents(prev => prev.map(s => s.studentId === editingStudentId ? { ...s, ...studentData } : s));
       setEditingStudentId(null);
-      alert("Student updated successfully.");
+      toast.success("Student updated successfully.")
     } catch (error) {
       console.error("Error updating student:", error);
-      alert("Failed to update student: " + error.message);
+      toast.error("Failed to update student: " + error.message)
     } finally {
       setIsSaving(false);
     }
   };
 
   const handleDeleteStudent = async (studentId) => {
-    if (!window.confirm(`Are you sure you want to delete student ${studentId}?`)) return;
-    setIsSaving(true);
-    try {
-      const batchCommit = writeBatch(db);
-      const studentDocPath = `${enrollmentBatch.programId}(${enrollmentBatch.batchName})`;
+    setConfirmConfig({
+      isOpen: true,
+      title: 'Delete Student',
+      message: `Are you sure you want to delete student ${studentId}?`,
+      onConfirm: async () => {
+        setConfirmConfig(prev => ({ ...prev, isOpen: false }));
+        setIsSaving(true);
+        try {
+          const batchCommit = writeBatch(db);
+          const studentDocPath = `${enrollmentBatch.programId}(${enrollmentBatch.batchName})`;
 
-      batchCommit.delete(doc(db, 'Students', studentDocPath, 'Student IDs', studentId));
-      batchCommit.delete(doc(db, 'AllStudents', studentId));
+          batchCommit.delete(doc(db, 'Students', studentDocPath, 'Student IDs', studentId));
+          batchCommit.delete(doc(db, 'AllStudents', studentId));
 
-      await batchCommit.commit();
-      await logActivity("Removed Student", `${studentId} from Batch ${enrollmentBatch.batchName}`);
+          await batchCommit.commit();
+          await logActivity("Removed Student", `${studentId} from Batch ${enrollmentBatch.batchName}`);
 
-      setExistingStudents(prev => prev.filter(s => s.studentId !== studentId));
-      alert("Student deleted successfully.");
-    } catch (error) {
-      console.error("Error deleting student:", error);
-      alert("Failed to delete student: " + error.message);
-    } finally {
-      setIsSaving(false);
-    }
+          setExistingStudents(prev => prev.filter(s => s.studentId !== studentId));
+          toast.success("Student deleted successfully.")
+        } catch (error) {
+          console.error("Error deleting student:", error);
+          toast.error("Failed to delete student: " + error.message)
+        } finally {
+          setIsSaving(false);
+        }
+      }
+    });
   };
 
   const filteredBatches = batches.filter(b => {
@@ -358,10 +446,16 @@ const BatchManager = ({ setPage }) => {
   return (
     <div className="batch-manager">
       <motion.div 
-        initial={{ opacity: 0, y: 10 }}
+        initial={{ opacity: 0, y: 20 }}
         animate={{ opacity: 1, y: 0 }}
-        className="view-container"
+        exit={{ opacity: 0, y: -20 }}
+        className="dashboard-tab"
       >
+        <ConfirmModal 
+          {...confirmConfig} 
+          onCancel={() => setConfirmConfig(prev => ({ ...prev, isOpen: false }))} 
+        />
+        <div className="view-container">
         <div className="page-header-row">
           <div>
             <button className="btn-back-home" onClick={() => setPage('dashboard')}>
@@ -388,9 +482,9 @@ const BatchManager = ({ setPage }) => {
           <table className="modern-table">
             <thead>
               <tr>
+                <th>Degree Programme</th>
                 <th>Batch ID</th>
                 <th>Batch Name</th>
-                <th>Degree Programme</th>
                 <th>Intake Year</th>
                 <th>Actions</th>
               </tr>
@@ -412,14 +506,14 @@ const BatchManager = ({ setPage }) => {
                 <tr key={batch.docId}>
                   {editingBatchId === batch.docId ? (
                     <>
+                      <td>
+                        <input type="text" className="form-input" style={{padding: '4px', fontSize: '0.9rem', backgroundColor: '#f1f5f9'}} value={editingBatchData.programId || ''} disabled />
+                      </td>
                       <td className="id-cell">
                         <input type="text" className="form-input" style={{padding: '4px', fontSize: '0.9rem'}} value={editingBatchData.batchId || ''} onChange={e => setEditingBatchData({...editingBatchData, batchId: e.target.value})} />
                       </td>
                       <td>
                         <input type="text" className="form-input" style={{padding: '4px', fontSize: '0.9rem'}} value={editingBatchData.batchName || ''} onChange={e => setEditingBatchData({...editingBatchData, batchName: e.target.value})} />
-                      </td>
-                      <td>
-                        <input type="text" className="form-input" style={{padding: '4px', fontSize: '0.9rem', backgroundColor: '#f1f5f9'}} value={editingBatchData.programId || ''} disabled />
                       </td>
                       <td>
                         <input type="text" className="form-input" style={{padding: '4px', fontSize: '0.9rem'}} value={editingBatchData.intakeYear || ''} onChange={e => setEditingBatchData({...editingBatchData, intakeYear: e.target.value})} />
@@ -433,13 +527,13 @@ const BatchManager = ({ setPage }) => {
                     </>
                   ) : (
                     <>
-                      <td className="id-cell">{batch.batchId}</td>
-                      <td>{batch.batchName}</td>
                       <td>
                         <span className="count-badge" style={{ backgroundColor: 'var(--shape-light)', color: 'var(--primary)' }}>
                           <GraduationCap size={12} style={{ marginRight: '4px', display: 'inline' }} /> {batch.programId}
                         </span>
                       </td>
+                      <td className="id-cell">{batch.batchId}</td>
+                      <td>{batch.batchName}</td>
                       <td>{batch.intakeYear}</td>
                       <td>
                         <div style={{ display: 'flex', gap: '8px' }}>
@@ -473,6 +567,7 @@ const BatchManager = ({ setPage }) => {
               </div>
             )}
           </div>
+        </div>
         </div>
       </motion.div>
 

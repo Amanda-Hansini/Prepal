@@ -598,13 +598,117 @@ public class ManualResultEntryActivity extends AppCompatActivity {
 
         btnProceedDialog.setOnClickListener(v -> {
             dialog.dismiss();
-            android.util.Log.d("MANUAL_DEBUG", "Sending results size: " + results.size());
-            Intent intent = new Intent(this, QuizActivity.class);
-            intent.putExtra("cumulativeGpa", cumulativeGpa);
-            intent.putExtra("semesterGpa", currentGpa);
-            intent.putExtra("results", (java.io.Serializable) results);
-            intent.putExtra("semesterName", semesterName);
+            
+            boolean hasIncomplete = false;
+            for (Map<String, Object> r : results) {
+                String g = (String) r.get("grade");
+                if (g != null && (g.equals("MC") || g.equals("AB") || g.equals("NE") || g.equals("WH") || g.equals("INC"))) {
+                    hasIncomplete = true;
+                    break;
+                }
+            }
+
+            if (hasIncomplete && isFirstSemester(semesterName)) {
+                saveFirstSemesterIncompleteAndBlock(results, semesterName);
+            } else {
+                android.util.Log.d("MANUAL_DEBUG", "Sending results size: " + results.size());
+                Intent intent = new Intent(this, QuizActivity.class);
+                intent.putExtra("cumulativeGpa", cumulativeGpa);
+                intent.putExtra("semesterGpa", currentGpa);
+                intent.putExtra("results", (java.io.Serializable) results);
+                intent.putExtra("semesterName", semesterName);
+                startActivity(intent);
+            }
+        });
+
+        dialog.show();
+    }
+
+    private boolean isFirstSemester(String currentSemesterName) {
+        if (!isEditMode) {
+            return historySemesters == null || historySemesters.isEmpty();
+        } else {
+            if (historySemesters == null || historySemesters.isEmpty()) return true;
+            
+            List<com.google.firebase.firestore.DocumentSnapshot> sorted = new ArrayList<>(historySemesters);
+            java.util.Collections.sort(sorted, (d1, d2) -> {
+                com.google.firebase.Timestamp t1 = d1.getTimestamp("timestamp");
+                com.google.firebase.Timestamp t2 = d2.getTimestamp("timestamp");
+                if (t1 != null && t2 != null) {
+                    return t1.compareTo(t2);
+                }
+                return d1.getId().compareTo(d2.getId());
+            });
+            return sorted.get(0).getId().equals(currentSemesterName);
+        }
+    }
+
+    private void saveFirstSemesterIncompleteAndBlock(List<Map<String, Object>> results, String semesterName) {
+        List<String> abModules = new ArrayList<>();
+        List<String> mcModules = new ArrayList<>();
+        List<String> neModules = new ArrayList<>();
+        for (Map<String, Object> m : results) {
+            String id = (String) m.get("module_id");
+            String g = (String) m.get("grade");
+            if (g != null) {
+                if (g.equals("AB")) abModules.add(id);
+                else if (g.equals("MC")) mcModules.add(id);
+                else if (g.equals("NE")) neModules.add(id);
+            }
+        }
+
+        Map<String, Object> semesterData = new HashMap<>();
+        semesterData.put("semesterName", semesterName);
+        semesterData.put("semesterGpa", 0.0);
+        semesterData.put("modules", results);
+        semesterData.put("timestamp", com.google.firebase.Timestamp.now());
+        semesterData.put("abModules", abModules);
+        semesterData.put("mcModules", mcModules);
+        semesterData.put("neModules", neModules);
+
+        final android.app.ProgressDialog progress = new android.app.ProgressDialog(this);
+        progress.setMessage("Saving academic record...");
+        progress.setCancelable(false);
+        progress.show();
+
+        db.collection("AllStudents").document(studentId)
+                .collection("SemesterResults").document(semesterName)
+                .set(semesterData)
+                .addOnSuccessListener(aVoid -> {
+                    db.collection("AllStudents").document(studentId).update("resultsEntered", true)
+                            .addOnCompleteListener(t -> {
+                                progress.dismiss();
+                                showFirstSemesterIncompleteDialog();
+                            });
+                })
+                .addOnFailureListener(e -> {
+                    progress.dismiss();
+                    Toast.makeText(this, "Failed to save: " + e.getMessage(), Toast.LENGTH_SHORT).show();
+                });
+    }
+
+    private void showFirstSemesterIncompleteDialog() {
+        androidx.appcompat.app.AlertDialog.Builder builder = new androidx.appcompat.app.AlertDialog.Builder(this);
+        android.view.View view = getLayoutInflater().inflate(R.layout.dialog_first_semester_incomplete, null);
+        builder.setView(view);
+        builder.setCancelable(false);
+
+        androidx.appcompat.app.AlertDialog dialog = builder.create();
+        if (dialog.getWindow() != null) {
+            dialog.getWindow().setBackgroundDrawable(new android.graphics.drawable.ColorDrawable(android.graphics.Color.TRANSPARENT));
+        }
+
+        view.findViewById(R.id.btnBackToLogin).setOnClickListener(v -> {
+            dialog.dismiss();
+            getSharedPreferences("UserSession", MODE_PRIVATE).edit().clear().apply();
+            Intent intent = new Intent(ManualResultEntryActivity.this, MainActivity.class);
+            intent.setFlags(Intent.FLAG_ACTIVITY_NEW_TASK | Intent.FLAG_ACTIVITY_CLEAR_TASK);
             startActivity(intent);
+            finish();
+        });
+
+        view.findViewById(R.id.btnEnterResultsNow).setOnClickListener(v -> {
+            dialog.dismiss();
         });
 
         dialog.show();

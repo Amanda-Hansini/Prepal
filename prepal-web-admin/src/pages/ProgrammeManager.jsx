@@ -1,4 +1,5 @@
 import React, { useState, useEffect } from 'react';
+import toast from "react-hot-toast";
 import { motion, AnimatePresence } from 'framer-motion';
 import { 
   Search, Filter, Plus, ChevronRight, Check, X, ArrowLeft,
@@ -6,9 +7,10 @@ import {
   Upload, UserPlus, Download
 } from 'lucide-react';
 import * as XLSX from 'xlsx';
-import { collection, getDocs, getDoc, doc, deleteDoc, setDoc, updateDoc, writeBatch, query, where, collectionGroup } from 'firebase/firestore';
+import { collection, getDocs, getDoc, doc, deleteDoc, setDoc, updateDoc, writeBatch, query, where, getDocsFromServer } from 'firebase/firestore';
 import { db } from '../firebase';
 import { logActivity } from '../utils/activityLogger';
+import ConfirmModal from '../components/ConfirmModal';
 
 const ProgrammeManager = ({ setPage, initialTab = 'batches', initialView = 'list' }) => {
   const [view, setView] = useState(initialView); // 'list', 'wizard', 'details'
@@ -18,6 +20,7 @@ const ProgrammeManager = ({ setPage, initialTab = 'batches', initialView = 'list
   const [searchQuery, setSearchQuery] = useState('');
   const [statusFilter, setStatusFilter] = useState('All');
   const [currentPage, setCurrentPage] = useState(1);
+  const [confirmConfig, setConfirmConfig] = useState({ isOpen: false, title: '', message: '', onConfirm: null });
 
   useEffect(() => {
     setView(initialView);
@@ -44,6 +47,7 @@ const ProgrammeManager = ({ setPage, initialTab = 'batches', initialView = 'list
   const [newProgDuration, setNewProgDuration] = useState('N/A');
   const [newBatchId, setNewBatchId] = useState('');
   const [newBatchName, setNewBatchName] = useState('');
+  const [newBatchIntakeYear, setNewBatchIntakeYear] = useState('');
   const [studentList, setStudentList] = useState([]); // Array of students for the new batch
   const [isEnrollmentModalOpen, setIsEnrollmentModalOpen] = useState(false);
   const [enrollmentBatch, setEnrollmentBatch] = useState(null);
@@ -58,7 +62,7 @@ const ProgrammeManager = ({ setPage, initialTab = 'batches', initialView = 'list
 
   const [isAddBatchModalOpen, setIsAddBatchModalOpen] = useState(false);
   const [addBatchWizardStep, setAddBatchWizardStep] = useState(1);
-  const [addBatchData, setAddBatchData] = useState({ batchId: '', batchName: '', intakeYear: new Date().getFullYear().toString() });
+  const [addBatchData, setAddBatchData] = useState({ batchId: '', batchName: '', intakeYear: '' });
   const [isAutoGeneratingSemesters, setIsAutoGeneratingSemesters] = useState(true);
   const [moduleList, setModuleList] = useState([]); // Array of modules for the new batch
   const [manualModule, setManualModule] = useState({ semesterId: '', moduleCode: '', moduleName: '', credits: '' });
@@ -209,16 +213,59 @@ const ProgrammeManager = ({ setPage, initialTab = 'batches', initialView = 'list
     fetchHubData();
   }, [selectedProgramme, view]);
 
-  const handleDeleteHubItem = async (type, item) => {
-    if (!window.confirm(`Are you sure you want to delete this ${type.slice(0, -1)}?`)) return;
+  const handleDeleteHubItem = (type, item) => {
+    if (selectedProgramme?.status?.toLowerCase() === 'inactive') {
+      toast.error(`Action Blocked: The degree programme "${selectedProgramme.name}" is currently Inactive. You cannot delete items.`)
+      return;
+    }
     
-    try {
-      if (!item.docPath) {
-        alert("Cannot delete: Document path not found.");
-        return;
-      }
+    let message = `Are you sure you want to delete this ${type.slice(0, -1)}?`;
+    if (type === 'batches') {
+      message = `Are you sure you want to delete this batch? All semesters, modules, and enrolled students for this batch will also be deleted. This action cannot be undone.`;
+    }
+
+    setConfirmConfig({
+      isOpen: true,
+      title: `Delete ${type.slice(0, -1).charAt(0).toUpperCase() + type.slice(1, -1)}`,
+      message: message,
+      onConfirm: async () => {
+        setConfirmConfig(prev => ({ ...prev, isOpen: false }));
+        try {
+          if (!item.docPath) {
+            toast.error("Cannot delete: Document path not found.")
+            return;
+          }
       
-      await deleteDoc(doc(db, item.docPath));
+      const deletePromises = [];
+      deletePromises.push(deleteDoc(doc(db, item.docPath)));
+
+      if (type === 'batches') {
+          const safeProgId = String(item.programId || selectedProgramme.id).replace(/\//g, '-');
+          const safeBatchName = String(item.batchName || '').replace(/\//g, '-');
+          const batchDocPathFlat = `${safeProgId}(${safeBatchName})`;
+          deletePromises.push(deleteDoc(doc(db, 'Batches', batchDocPathFlat)));
+
+          const semsQ = query(collection(db, 'Degrees', selectedProgramme.id, 'Semesters'), where('batchId', '==', item.batchId));
+          const semsSnap = await getDocs(semsQ);
+          semsSnap.forEach(d => deletePromises.push(deleteDoc(d.ref)));
+
+          const modsQ = query(collection(db, 'Degrees', selectedProgramme.id, 'Modules'), where('batchId', '==', item.batchId));
+          const modsSnap = await getDocs(modsQ);
+          modsSnap.forEach(d => deletePromises.push(deleteDoc(d.ref)));
+
+          const studentsQ = query(collection(db, 'AllStudents'), where('batchId', '==', item.batchId));
+          const studentsSnap = await getDocs(studentsQ);
+          studentsSnap.forEach(d => {
+             deletePromises.push(deleteDoc(d.ref));
+             deletePromises.push(deleteDoc(doc(db, 'Students', batchDocPathFlat, 'Student IDs', d.id)));
+          });
+      } else if (type === 'semesters') {
+          const modsQ = query(collection(db, 'Degrees', selectedProgramme.id, 'Modules'), where('semesterId', '==', item.semesterId), where('batchId', '==', item.batchId));
+          const modsSnap = await getDocs(modsQ);
+          modsSnap.forEach(d => deletePromises.push(deleteDoc(d.ref)));
+      }
+
+      await Promise.all(deletePromises);
       
       if (type === 'batches') {
         setHubBatches(prev => prev.filter(b => b.docPath !== item.docPath));
@@ -227,11 +274,13 @@ const ProgrammeManager = ({ setPage, initialTab = 'batches', initialView = 'list
       } else if (type === 'modules') {
         setHubModules(prev => prev.filter(m => m.docPath !== item.docPath));
       }
-      alert(`${type.slice(0, -1).charAt(0).toUpperCase() + type.slice(1, -1)} deleted successfully!`);
+      toast.success(`${type.slice(0, -1).charAt(0).toUpperCase() + type.slice(1, -1)} deleted successfully!`);
     } catch (error) {
       console.error("Delete failed:", error);
-      alert("Delete failed: " + error.message);
+      toast.error("Delete failed: " + error.message)
     }
+      }
+    });
   };
 
   const handleEditHubItem = (type, item) => {
@@ -249,6 +298,11 @@ const ProgrammeManager = ({ setPage, initialTab = 'batches', initialView = 'list
 
       await setDoc(doc(db, editingHubItemId), dataToSave, { merge: true });
 
+      if (editingHubItemType === 'batches') {
+        const batchDocPathFlat = editingHubItemId.split('/').pop();
+        await setDoc(doc(db, 'Batches', batchDocPathFlat), dataToSave, { merge: true });
+      }
+
       // Update local state
       if (editingHubItemType === 'batches') {
         setHubBatches(prev => prev.map(b => b.docPath === editingHubItemId ? { ...b, ...editingHubItemData } : b));
@@ -261,10 +315,10 @@ const ProgrammeManager = ({ setPage, initialTab = 'batches', initialView = 'list
       setEditingHubItemId(null);
       setEditingHubItemType('');
       setEditingHubItemData({});
-      alert("Updated successfully!");
+      toast.success("Updated successfully!")
     } catch (error) {
       console.error("Update failed:", error);
-      alert("Update failed: " + error.message);
+      toast.error("Update failed: " + error.message)
     } finally {
       setIsSaving(false);
     }
@@ -283,7 +337,7 @@ const ProgrammeManager = ({ setPage, initialTab = 'batches', initialView = 'list
 
   const handleSaveNewBatch = async () => {
     if (!addBatchData.batchId || !addBatchData.batchName) {
-      alert("Batch ID and Name are required!");
+      toast.error("Batch ID and Name are required!")
       return;
     }
 
@@ -294,7 +348,7 @@ const ProgrammeManager = ({ setPage, initialTab = 'batches', initialView = 'list
         const newIds = studentList.map(s => s.studentId);
         const existingIds = await checkStudentIdsUnique(newIds);
         if (existingIds.length > 0) {
-          alert(`Duplicate IDs: ${existingIds.join(', ')} already exist in the system.`);
+          toast.error(`Duplicate IDs: ${existingIds.join(', ')} already exist in the system.`);
           setIsSaving(false);
           return;
         }
@@ -363,7 +417,7 @@ const ProgrammeManager = ({ setPage, initialTab = 'batches', initialView = 'list
 
       await batchCommit.commit();
       await logActivity("Created Batch", `${addBatchData.batchId}: ${addBatchData.batchName} for ${programId}`);
-      alert(`Batch "${addBatchData.batchName}" created with ${studentList.length} students and ${moduleList.length} modules!`);
+      toast.success(`Batch "${addBatchData.batchName}" created with ${studentList.length} students and ${moduleList.length} modules!`)
       
       // Refresh Both Hub Data and Global Programme List (for batch counts)
       await fetchHubData(); 
@@ -373,10 +427,10 @@ const ProgrammeManager = ({ setPage, initialTab = 'batches', initialView = 'list
       setAddBatchWizardStep(1);
       setStudentList([]);
       setModuleList([]);
-      setAddBatchData({ batchId: '', batchName: '', intakeYear: new Date().getFullYear().toString() });
+      setAddBatchData({ batchId: '', batchName: '', intakeYear: '' });
     } catch (error) {
       console.error("Error creating new batch:", error);
-      alert("Failed to create batch: " + error.message);
+      toast.error("Failed to create batch: " + error.message)
     } finally {
       setIsSaving(false);
     }
@@ -403,20 +457,32 @@ const ProgrammeManager = ({ setPage, initialTab = 'batches', initialView = 'list
 
   const checkStudentIdsUnique = async (ids) => {
     const existingIds = [];
+    
+    // 1. Check for duplicates within the uploaded list itself
+    const uniqueIds = new Set();
+    const duplicatesInList = new Set();
+    ids.forEach(id => {
+      if (uniqueIds.has(id)) duplicatesInList.add(id);
+      uniqueIds.add(id);
+    });
+    duplicatesInList.forEach(id => existingIds.push(`${id} (duplicate inside file)`));
+
+    // 2. Check Firestore (using getDocsFromServer to bypass any stuck local cache)
     // Firestore 'in' query limit is 30, so we chunk the ids
     for (let i = 0; i < ids.length; i += 30) {
       const chunk = ids.slice(i, i + 30);
       const q = query(collection(db, 'AllStudents'), where('studentId', 'in', chunk));
-      const snap = await getDocs(q);
+      const snap = await getDocsFromServer(q);
       snap.forEach(doc => existingIds.push(doc.data().studentId));
     }
-    return existingIds;
+    
+    return [...new Set(existingIds)];
   };
 
   const handleSaveSingleStudent = async () => {
     const { studentId, fullName, email, password, status } = singleStudent;
     if (!studentId || !fullName || !email || !password) {
-      alert("Please fill all student fields.");
+      toast.error("Please fill all student fields.")
       return;
     }
 
@@ -425,7 +491,7 @@ const ProgrammeManager = ({ setPage, initialTab = 'batches', initialView = 'list
       // Check for uniqueness
       const existingIds = await checkStudentIdsUnique([studentId]);
       if (existingIds.length > 0) {
-        alert(`Error: Student ID "${studentId}" is already taken!`);
+        toast.error(`Error: Student ID "${studentId}" is already taken!`)
         setIsSaving(false);
         return;
       }
@@ -451,13 +517,13 @@ const ProgrammeManager = ({ setPage, initialTab = 'batches', initialView = 'list
       await batchCommit.commit();
       await logActivity("Enrolled Student", `${studentId} (${fullName}) in Batch ${enrollmentBatch.batchName}`);
       
-      alert("Student enrolled successfully!");
+      toast.success("Student enrolled successfully!")
       setExistingStudents(prev => [...prev, studentData]);
       setSingleStudent({ studentId: '', fullName: '', email: '', password: '', status: 'active' });
       setEnrollmentTab('view');
     } catch (error) {
       console.error("Error saving single student:", error);
-      alert("Failed to enroll student: " + error.message);
+      toast.error("Failed to enroll student: " + error.message)
     } finally {
       setIsSaving(false);
     }
@@ -472,7 +538,7 @@ const ProgrammeManager = ({ setPage, initialTab = 'batches', initialView = 'list
       const existingIds = await checkStudentIdsUnique(newIds);
       
       if (existingIds.length > 0) {
-        alert(`Duplicate Student IDs Detected!\n\nThe following IDs are already in use: ${existingIds.join(', ')}.\n\nEach student must have a unique ID across the entire system. Please update your file and try again.`);
+        toast.error(`Duplicate Student IDs Detected!\n\nThe following IDs are already in use: ${existingIds.join(', ')}.\n\nEach student must have a unique ID across the entire system. Please update your file and try again.`);
         setIsSaving(false);
         return;
       }
@@ -502,12 +568,12 @@ const ProgrammeManager = ({ setPage, initialTab = 'batches', initialView = 'list
       
       await batchCommit.commit();
       await logActivity("Enrolled Students", `Bulk enrolled ${studentList.length} students into Batch ${enrollmentBatch.batchName}`);
-      alert(`Successfully enrolled ${studentList.length} students into ${enrollmentBatch.batchName}.`);
+      toast.success(`Successfully enrolled ${studentList.length} students into ${enrollmentBatch.batchName}.`)
       setIsEnrollmentModalOpen(false);
       setStudentList([]);
     } catch (error) {
       console.error("Error enrolling students:", error);
-      alert("Failed to enroll students: " + error.message);
+      toast.error("Failed to enroll students: " + error.message)
     } finally {
       setIsSaving(false);
     }
@@ -542,21 +608,26 @@ const ProgrammeManager = ({ setPage, initialTab = 'batches', initialView = 'list
       // Update local state
       setExistingStudents(prev => prev.map(s => s.studentId === editingStudentId ? { ...s, ...studentData } : s));
       setEditingStudentId(null);
-      alert("Student updated successfully.");
+      toast.success("Student updated successfully.")
     } catch (error) {
       console.error("Error updating student:", error);
-      alert("Failed to update student: " + error.message);
+      toast.error("Failed to update student: " + error.message)
     } finally {
       setIsSaving(false);
     }
   };
 
-  const handleDeleteStudent = async (studentId) => {
-    if (!window.confirm(`Are you sure you want to delete student ${studentId}?`)) return;
-    setIsSaving(true);
-    try {
-      const batchCommit = writeBatch(db);
-      const studentDocPath = `${selectedProgramme.id}(${enrollmentBatch.batchName})`;
+  const handleDeleteStudent = (studentId) => {
+    setConfirmConfig({
+      isOpen: true,
+      title: 'Delete Student',
+      message: `Are you sure you want to delete student ${studentId}?`,
+      onConfirm: async () => {
+        setConfirmConfig(prev => ({ ...prev, isOpen: false }));
+        setIsSaving(true);
+        try {
+          const batchCommit = writeBatch(db);
+          const studentDocPath = `${selectedProgramme.id}(${enrollmentBatch.batchName})`;
 
       // Delete from nested collection
       batchCommit.delete(doc(db, 'Students', studentDocPath, 'Student IDs', studentId));
@@ -568,13 +639,15 @@ const ProgrammeManager = ({ setPage, initialTab = 'batches', initialView = 'list
 
       // Update local state
       setExistingStudents(prev => prev.filter(s => s.studentId !== studentId));
-      alert("Student deleted successfully.");
+      toast.success("Student deleted successfully.")
     } catch (error) {
       console.error("Error deleting student:", error);
-      alert("Failed to delete student: " + error.message);
+      toast.error("Failed to delete student: " + error.message)
     } finally {
       setIsSaving(false);
     }
+      }
+    });
   };
 
   const hashPassword = async (password) => {
@@ -682,8 +755,22 @@ const ProgrammeManager = ({ setPage, initialTab = 'batches', initialView = 'list
             };
           }).filter(m => m.moduleCode && !m.moduleCode.toLowerCase().startsWith('total') && !m.moduleName.toLowerCase().startsWith('total'));
 
-          setModuleList(parsedModules);
-          alert(`Successfully parsed ${parsedModules.length} modules.`);
+          if (parsedModules.length === 0) {
+            toast.error((t) => (
+              <div style={{ display: 'flex', flexDirection: 'column', gap: '10px' }}>
+                <span><b>Error:</b> No valid modules found. Upload the Expected columns format include: Semester ID, Module Code, Module Name, Credits.</span>
+                <button 
+                  onClick={() => toast.dismiss(t.id)}
+                  style={{ alignSelf: 'flex-end', padding: '6px 16px', background: '#ef4444', color: 'white', borderRadius: '6px', border: 'none', cursor: 'pointer', fontWeight: '500' }}
+                >
+                  OK
+                </button>
+              </div>
+            ), { duration: Infinity });
+          } else {
+            setModuleList(parsedModules);
+            toast.success(`Successfully parsed ${parsedModules.length} modules.`);
+          }
         } else {
           const parsedStudents = data.map(row => ({
             studentId: String(getValueByKeys(row, ['studentId', 'studentid', 'student id', 'student_id', 'id', 'student no', 'studentno', 'student_no'])).trim(),
@@ -692,12 +779,29 @@ const ProgrammeManager = ({ setPage, initialTab = 'batches', initialView = 'list
             password: String(getValueByKeys(row, ['password', 'pass']) || '123456').trim(),
             status: String(getValueByKeys(row, ['status']) || 'active').toLowerCase().trim()
           })).filter(s => s.studentId);
-          setStudentList(parsedStudents);
-          alert(`Successfully parsed ${parsedStudents.length} students.`);
+          if (parsedStudents.length === 0) {
+            toast.error((t) => (
+              <div style={{ display: 'flex', flexDirection: 'column', gap: '10px' }}>
+                <span><b>Error:</b> No valid students found. Upload the Expected columns format include: Student ID, Full Name, Email.</span>
+                <button 
+                  onClick={() => toast.dismiss(t.id)}
+                  style={{ alignSelf: 'flex-end', padding: '6px 16px', background: '#ef4444', color: 'white', borderRadius: '6px', border: 'none', cursor: 'pointer', fontWeight: '500' }}
+                >
+                  OK
+                </button>
+              </div>
+            ), { duration: Infinity });
+          } else {
+            setStudentList(parsedStudents);
+            toast.success(`Successfully parsed ${parsedStudents.length} students.`);
+          }
         }
+        
+        // Clear the file input so the same file can be selected again
+        e.target.value = '';
       } catch (error) {
         console.error("Error parsing file:", error);
-        alert("Failed to parse file. Please ensure it is a valid Excel or CSV.");
+        toast.error("Failed to parse file. Please ensure it is a valid Excel or CSV.")
       }
     };
     reader.readAsBinaryString(file);
@@ -705,7 +809,7 @@ const ProgrammeManager = ({ setPage, initialTab = 'batches', initialView = 'list
 
   const handleUpdateProgramme = async () => {
     if(!editingProg.id || !editingProg.name || !editingProg.duration) {
-      alert("Please fill all fields");
+      toast.error("Please fill all fields")
       return;
     }
     setIsSaving(true);
@@ -719,7 +823,7 @@ const ProgrammeManager = ({ setPage, initialTab = 'batches', initialView = 'list
         status: editingProg.status || 'Active'
       }, { merge: true });
       
-      alert("Programme updated successfully!");
+      toast.success("Programme updated successfully!")
       
       // Update local state manually to ensure the table reflects changes even if cache is slightly behind
       setProgrammes(prev => prev.map(p => 
@@ -732,15 +836,63 @@ const ProgrammeManager = ({ setPage, initialTab = 'batches', initialView = 'list
       setEditingProg(null);
     } catch (error) {
       console.error("Error updating programme:", error);
-      alert("Failed to update programme: " + error.message);
+      toast.error("Failed to update programme: " + error.message)
     } finally {
       setIsSaving(false);
     }
   };
 
+  const handleNextStep = () => {
+    if (wizardStep === 1) {
+      if (!newProgId || !newProgName || newProgDuration === 'N/A') {
+        toast.error("Please fill in all core details (ID, Name, Duration) in Step 1.");
+        return;
+      }
+      if (newProgId.includes('/')) {
+        toast.error("Programme ID cannot contain slashes ('/'). Use hyphens instead.");
+        return;
+      }
+    } else if (wizardStep === 2) {
+      if (!newBatchId || !newBatchName || !newBatchIntakeYear) {
+        toast.error("Please provide a Batch Name, Batch ID, and Intake Year to continue.");
+        return;
+      }
+      if (newBatchId.includes('/') || newBatchName.includes('/')) {
+        toast.error("Batch ID and Name cannot contain slashes ('/'). Use hyphens instead.");
+        return;
+      }
+    } else if (wizardStep === 4) {
+      if (studentList.length === 0) {
+        toast.error("Please enroll at least one student before continuing.");
+        return;
+      }
+    }
+    setWizardStep(prev => prev + 1);
+  };
+
   const handleCompleteSetup = async () => {
-    if(!newProgId || !newProgName) {
-      alert("Programme ID and Name are required!");
+    if(!newProgId || !newProgName || newProgDuration === 'N/A') {
+      toast.error("Programme ID, Name, and Duration are required!")
+      return;
+    }
+    if (newProgId.includes('/')) {
+      toast.error("Programme ID cannot contain slashes ('/'). Use hyphens instead.");
+      return;
+    }
+    if (!newBatchId || !newBatchName || !newBatchIntakeYear) {
+      toast.error("Batch ID, Name, and Intake Year are required!");
+      return;
+    }
+    if (newBatchId.includes('/') || newBatchName.includes('/')) {
+      toast.error("Batch ID and Name cannot contain slashes ('/'). Use hyphens instead.");
+      return;
+    }
+    if (studentList.length === 0) {
+      toast.error("Please enroll at least one student before completing setup.");
+      return;
+    }
+    if (moduleList.length === 0) {
+      toast.error("Please add at least one module before completing setup.");
       return;
     }
     setIsSaving(true);
@@ -750,7 +902,7 @@ const ProgrammeManager = ({ setPage, initialTab = 'batches', initialView = 'list
         const newIds = studentList.map(s => s.studentId);
         const existingIds = await checkStudentIdsUnique(newIds);
         if (existingIds.length > 0) {
-          alert(`Setup Blocked: Duplicate Student IDs Detected!\n\nIDs already in use: ${existingIds.join(', ')}.\n\nPlease fix the student list in Step 4 before completing setup.`);
+          toast.error(`Setup Blocked: Duplicate Student IDs Detected (v2)!\n\nIDs already in use: ${existingIds.join(', ')}.\n\nPlease fix the student list in Step 4 before completing setup.`);
           setIsSaving(false);
           return;
         }
@@ -759,7 +911,7 @@ const ProgrammeManager = ({ setPage, initialTab = 'batches', initialView = 'list
       // Check if Programme ID is already taken
       const progDoc = await getDoc(doc(db, 'Degrees', newProgId));
       if (progDoc.exists()) {
-        alert(`Programme ID "${newProgId}" is already taken! Please use a different ID.`);
+        toast.error(`Programme ID "${newProgId}" is already taken! Please use a different ID.`)
         setIsSaving(false);
         return;
       }
@@ -781,7 +933,7 @@ const ProgrammeManager = ({ setPage, initialTab = 'batches', initialView = 'list
           programId: newProgId,
           batchId: newBatchId,
           batchName: newBatchName,
-          intakeYear: new Date().getFullYear().toString()
+          intakeYear: newBatchIntakeYear
         };
         
         batchCommit.set(doc(db, 'Batches', batchDocPath), batchPayload);
@@ -814,13 +966,15 @@ const ProgrammeManager = ({ setPage, initialTab = 'batches', initialView = 'list
             initial_password: student.password,
             isFirstLogin: true
           };
-          batchCommit.set(doc(db, 'Students', batchDocPath, 'Student IDs', student.studentId), studentData);
-          batchCommit.set(doc(db, 'AllStudents', student.studentId), studentData);
+          const safeStudentId = student.studentId.replace(/\//g, '-');
+          batchCommit.set(doc(db, 'Students', batchDocPath, 'Student IDs', safeStudentId), studentData);
+          batchCommit.set(doc(db, 'AllStudents', safeStudentId), studentData);
         }
 
         // 5. Save Modules
         for (const mod of moduleList) {
-          const modDocPath = `${batchDocPath}_${mod.semesterId}_${mod.moduleCode}`;
+          const safeModCode = mod.moduleCode.replace(/\//g, '-');
+          const modDocPath = `${batchDocPath}_${mod.semesterId}_${safeModCode}`;
           batchCommit.set(doc(db, 'Degrees', newProgId, 'Modules', modDocPath), {
             degreeId: newProgId,
             batchId: newBatchId,
@@ -837,7 +991,7 @@ const ProgrammeManager = ({ setPage, initialTab = 'batches', initialView = 'list
       if (newBatchId) {
         await logActivity("Created Batch", `${newBatchId}: ${newBatchName} for ${newProgId}`);
       }
-      alert("Programme setup completed successfully!");
+      toast.success("Programme setup completed successfully!")
 
       // Refresh and reset
       await fetchProgrammes();
@@ -845,73 +999,80 @@ const ProgrammeManager = ({ setPage, initialTab = 'batches', initialView = 'list
       setNewProgName('');
       setNewBatchId('');
       setNewBatchName('');
+      setNewBatchIntakeYear('');
       setStudentList([]);
       setModuleList([]);
       setView('list');
     } catch (error) {
       console.error("Error saving setup:", error);
-      alert("Failed to complete setup: " + error.message);
+      toast.error("Failed to complete setup: " + error.message)
     } finally {
       setIsSaving(false);
     }
   };
 
-  const handleDeleteProgramme = async (docId, displayId) => {
-    if(window.confirm(`Are you sure you want to delete programme ${displayId}? This will also delete all associated batches, semesters, and modules. This action cannot be undone.`)) {
-      try {
-        const targetDocId = docId || displayId;
-        const progId = displayId;
-        
-        // 1. Fetch all associated batches
-        const batchesQ = query(collection(db, 'Batches'), where('programId', '==', progId));
-        const batchesSnap = await getDocs(batchesQ);
-        
-        // 2. Fetch all associated semesters (using collectionGroup for resilience)
-        const semestersSnap = await getDocs(collectionGroup(db, 'Semester IDs'));
-        const targetSemesters = semestersSnap.docs.filter(doc => {
-          const dId = String(doc.data().degreeId || '').trim().toLowerCase();
-          return dId === progId.toLowerCase() || dId === targetDocId.toLowerCase();
-        });
+  const handleDeleteProgramme = (docId, displayId) => {
+    setConfirmConfig({
+      isOpen: true,
+      title: 'Delete Programme',
+      message: `Are you sure you want to delete programme ${displayId}? This will also delete all associated batches, semesters, and modules. This action cannot be undone.`,
+      onConfirm: async () => {
+        setConfirmConfig(prev => ({ ...prev, isOpen: false }));
+        try {
+          const targetDocId = docId || displayId;
+          const progId = displayId;
+          
+          const deletePromises = [];
 
-        // 3. Fetch all associated modules (using collectionGroup)
-        const modulesSnap = await getDocs(collectionGroup(db, 'Module IDs'));
-        const targetModules = modulesSnap.docs.filter(doc => {
-          const dId = String(doc.data().degreeId || '').trim().toLowerCase();
-          return dId === progId.toLowerCase() || dId === targetDocId.toLowerCase();
-        });
+          // 1. Fetch and delete top-level Batches, and their Students
+          const batchesQ = query(collection(db, 'Batches'), where('programId', '==', progId));
+          const batchesSnap = await getDocs(batchesQ);
+          for (const bDoc of batchesSnap.docs) {
+             const bData = bDoc.data();
+             deletePromises.push(deleteDoc(bDoc.ref));
+             
+             // Fetch and delete students for this batch
+             if (bData.batchId) {
+                 const studentsQ = query(collection(db, 'AllStudents'), where('batchId', '==', bData.batchId));
+                 const studentsSnap = await getDocs(studentsQ);
+                 const safeProgId = String(bData.programId || progId).replace(/\//g, '-');
+                 const safeBatchName = String(bData.batchName || '').replace(/\//g, '-');
+                 const batchDocPathFlat = `${safeProgId}(${safeBatchName})`;
+                 
+                 studentsSnap.forEach(sDoc => {
+                    deletePromises.push(deleteDoc(sDoc.ref)); // flat
+                    deletePromises.push(deleteDoc(doc(db, 'Students', batchDocPathFlat, 'Student IDs', sDoc.id))); // nested
+                 });
+             }
+          }
 
-        // 4. Perform Deletions
-        console.log(`Cascading delete for ${progId}: Deleting ${batchesSnap.size} batches, ${targetSemesters.length} semesters, ${targetModules.length} modules.`);
-        
-        const deletePromises = [];
-        
-        // Delete Batches
-        batchesSnap.forEach(doc => deletePromises.push(deleteDoc(doc.ref)));
-        
-        // Delete Semesters
-        targetSemesters.forEach(doc => deletePromises.push(deleteDoc(doc.ref)));
-        
-        // Delete Modules
-        targetModules.forEach(doc => deletePromises.push(deleteDoc(doc.ref)));
-        
-        // Delete the main Degree document
-        deletePromises.push(deleteDoc(doc(db, 'Degrees', targetDocId)));
-        
-        // Delete parent Semester document if it exists
-        deletePromises.push(deleteDoc(doc(db, 'Semesters', targetDocId)));
+          // 2. Fetch and delete Degrees/{targetDocId}/Batches
+          const subBatchesSnap = await getDocs(collection(db, 'Degrees', targetDocId, 'Batches'));
+          subBatchesSnap.forEach(doc => deletePromises.push(deleteDoc(doc.ref)));
+
+          // 3. Fetch and delete Degrees/{targetDocId}/Semesters
+          const subSemsSnap = await getDocs(collection(db, 'Degrees', targetDocId, 'Semesters'));
+          subSemsSnap.forEach(doc => deletePromises.push(deleteDoc(doc.ref)));
+
+          // 4. Fetch and delete Degrees/{targetDocId}/Modules
+          const subModsSnap = await getDocs(collection(db, 'Degrees', targetDocId, 'Modules'));
+          subModsSnap.forEach(doc => deletePromises.push(deleteDoc(doc.ref)));
+
+          // 5. Delete the main Degree document
+          deletePromises.push(deleteDoc(doc(db, 'Degrees', targetDocId)));
 
         await Promise.all(deletePromises);
         await logActivity("Deleted Programme", `${displayId} (and all associated data)`);
 
         // Update local state
         setProgrammes(prev => prev.filter(p => p.docId !== targetDocId && p.id !== targetDocId));
-        alert(`Programme ${displayId} and all associated data deleted successfully.`);
+        toast.success(`Programme ${displayId} and all associated data deleted successfully.`)
         
       } catch (error) {
         console.error("Error during cascading delete:", error);
-        alert("Failed to delete programme and its data: " + error.message);
+        toast.error("Failed to delete programme and its data: " + error.message)
       }
-    }
+    }});
   };
 
   const filteredProgrammes = programmes.filter(prog => {
@@ -1148,6 +1309,10 @@ const ProgrammeManager = ({ setPage, initialTab = 'batches', initialView = 'list
               <label>Batch ID</label>
               <input type="text" placeholder="e.g. BATCH-26" className="form-input" value={newBatchId} onChange={e => setNewBatchId(e.target.value)} />
             </div>
+            <div className="form-group">
+              <label>Intake Year</label>
+              <input type="number" placeholder="e.g. 2026" className="form-input" value={newBatchIntakeYear} onChange={e => setNewBatchIntakeYear(e.target.value)} />
+            </div>
           </div>
         )}
 
@@ -1243,7 +1408,7 @@ const ProgrammeManager = ({ setPage, initialTab = 'batches', initialView = 'list
                     if (manualStudent.studentId && manualStudent.fullName && manualStudent.email) {
                       // Check duplicate locally
                       if (studentList.some(s => s.studentId === manualStudent.studentId)) {
-                        alert("Duplicate Student ID detected locally!");
+                        toast.error("Duplicate Student ID detected locally!")
                         return;
                       }
                       setStudentList([...studentList, {
@@ -1255,7 +1420,7 @@ const ProgrammeManager = ({ setPage, initialTab = 'batches', initialView = 'list
                       }]);
                       setManualStudent({ studentId: '', fullName: '', email: '', password: 'password123', status: 'active' });
                     } else {
-                      alert("Please fill in Student ID, Full Name, and Email.");
+                      toast.error("Please fill in Student ID, Full Name, and Email.")
                     }
                   }}
                 >
@@ -1338,7 +1503,7 @@ const ProgrammeManager = ({ setPage, initialTab = 'batches', initialView = 'list
                      setModuleList([...moduleList, {...manualModule}]);
                      setManualModule({ semesterId: '', moduleCode: '', moduleName: '', credits: '' });
                    } else {
-                     alert("Fill required module fields.");
+                     toast.error("Fill required module fields.")
                    }
                 }}>Add Module</button>
               </div>
@@ -1368,7 +1533,7 @@ const ProgrammeManager = ({ setPage, initialTab = 'batches', initialView = 'list
           )}
           <div className="spacer" />
           {wizardStep < 5 ? (
-            <button className="btn-primary" onClick={() => setWizardStep(prev => prev + 1)}>
+            <button className="btn-primary" onClick={handleNextStep}>
               Next Step <ChevronRight size={18} />
             </button>
           ) : (
@@ -1408,12 +1573,12 @@ const ProgrammeManager = ({ setPage, initialTab = 'batches', initialView = 'list
               </button>
             )}
             {activeTab === 'semesters' && (
-              <button className="btn-primary" onClick={() => alert("Please add semesters by creating a new batch or using the edit options.")}>
+              <button className="btn-primary" onClick={() => toast.error("Please add semesters by creating a new batch or using the edit options.")}>
                 <Plus size={18} /> Add Semester
               </button>
             )}
              {activeTab === 'modules' && (
-              <button className="btn-primary" onClick={() => alert("Please add modules via the edit icon in the modules table.")}>
+              <button className="btn-primary" onClick={() => toast.error("Please add modules via the edit icon in the modules table.")}>
                 <Plus size={18} /> Add Module
               </button>
             )}
@@ -1769,6 +1934,10 @@ const ProgrammeManager = ({ setPage, initialTab = 'batches', initialView = 'list
 
   return (
     <div className="programme-manager">
+      <ConfirmModal 
+        {...confirmConfig} 
+        onCancel={() => setConfirmConfig(prev => ({ ...prev, isOpen: false }))} 
+      />
       <AnimatePresence mode="wait">
         {view === 'list' && renderProgrammeList()}
         {view === 'wizard' && renderWizard()}
@@ -2068,7 +2237,7 @@ const ProgrammeManager = ({ setPage, initialTab = 'batches', initialView = 'list
                 <div style={{ display: 'flex', justifyContent: 'flex-end', gap: '12px', borderTop: '1px solid var(--border-color)', paddingTop: '24px' }}>
                   <button className="btn-secondary" style={{ padding: '10px 20px' }} onClick={() => setIsAddBatchModalOpen(false)}>Cancel</button>
                   <button className="btn-primary" style={{ padding: '10px 24px' }} onClick={() => {
-                    if(!addBatchData.batchId || !addBatchData.batchName) { alert("Please fill batch details."); return; }
+                    if(!addBatchData.batchId || !addBatchData.batchName) { toast.error("Please fill batch details."); return; }
                     setAddBatchWizardStep(2);
                     setEnrollmentTab('upload');
                   }}>
@@ -2114,7 +2283,7 @@ const ProgrammeManager = ({ setPage, initialTab = 'batches', initialView = 'list
                          setModuleList([...moduleList, {...manualModule}]);
                          setManualModule({ semesterId: '', moduleCode: '', moduleName: '', credits: '' });
                        } else {
-                         alert("Fill required module fields.");
+                         toast.error("Fill required module fields.")
                        }
                     }}>Add Module</button>
                   </div>
@@ -2170,7 +2339,7 @@ const ProgrammeManager = ({ setPage, initialTab = 'batches', initialView = 'list
                          setStudentList([...studentList, {...singleStudent}]);
                          setSingleStudent({ studentId: '', fullName: '', email: '', password: '', status: 'active' });
                        } else {
-                         alert("Fill required student fields.");
+                         toast.error("Fill required student fields.")
                        }
                     }}>Add to List</button>
                   </div>

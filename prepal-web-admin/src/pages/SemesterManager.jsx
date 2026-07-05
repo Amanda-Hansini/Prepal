@@ -1,9 +1,11 @@
 import React, { useState, useEffect } from 'react';
+import toast from "react-hot-toast";
 import { motion } from 'framer-motion';
 import { Search, Plus, Check, X, Edit2, Trash2, Home, Calendar, GraduationCap } from 'lucide-react';
 import { collectionGroup, getDocs, doc, deleteDoc, updateDoc, writeBatch } from 'firebase/firestore';
 import { db } from '../firebase';
 import { logActivity } from '../utils/activityLogger';
+import ConfirmModal from '../components/ConfirmModal';
 
 const SemesterManager = ({ setPage }) => {
   const [semesters, setSemesters] = useState([]);
@@ -19,6 +21,8 @@ const SemesterManager = ({ setPage }) => {
   // Editing state
   const [editingSemId, setEditingSemId] = useState(null);
   const [editingSemData, setEditingSemData] = useState({});
+
+  const [confirmConfig, setConfirmConfig] = useState({ isOpen: false, title: '', message: '', onConfirm: null });
 
   const fetchSemesters = async () => {
     setLoading(true);
@@ -59,14 +63,16 @@ const SemesterManager = ({ setPage }) => {
 
   const handleSaveSemester = async () => {
     if (!editingSemData.academicYear || !editingSemData.semesterNo) {
-      alert("Academic Year and Semester Number are required!");
+      toast.error("Academic Year and Semester Number are required!")
       return;
     }
     setIsSaving(true);
     try {
       const updateData = {
         academicYear: editingSemData.academicYear,
-        semesterNo: editingSemData.semesterNo
+        semesterNo: editingSemData.semesterNo,
+        startDate: editingSemData.startDate || '',
+        endDate: editingSemData.endDate || ''
       };
 
       // Since semesters are inside a subcollection Degrees/{degreeId}/Semesters/{docId}
@@ -76,29 +82,36 @@ const SemesterManager = ({ setPage }) => {
 
       setSemesters(prev => prev.map(s => s.docPath === editingSemId ? { ...s, ...updateData } : s));
       setEditingSemId(null);
-      alert("Semester updated successfully!");
+      toast.success("Semester updated successfully!")
     } catch (error) {
       console.error("Error updating semester:", error);
-      alert("Update failed: " + error.message);
+      toast.error("Update failed: " + error.message)
     } finally {
       setIsSaving(false);
     }
   };
 
-  const handleDeleteSemester = async (sem) => {
-    if (!window.confirm(`Are you sure you want to delete semester ${sem.semesterId}? This might affect nested modules.`)) return;
-    setIsSaving(true);
-    try {
-      await deleteDoc(doc(db, sem.docPath));
-      await logActivity("Deleted Semester", `${sem.semesterId} of ${sem.degreeId}`);
-      setSemesters(prev => prev.filter(s => s.docPath !== sem.docPath));
-      alert("Semester deleted successfully!");
-    } catch (error) {
-      console.error("Error deleting semester:", error);
-      alert("Delete failed: " + error.message);
-    } finally {
-      setIsSaving(false);
-    }
+  const handleDeleteSemester = (sem) => {
+    setConfirmConfig({
+      isOpen: true,
+      title: 'Delete Semester',
+      message: `Are you sure you want to delete semester ${sem.semesterId}? This might affect nested modules.`,
+      onConfirm: async () => {
+        setConfirmConfig(prev => ({ ...prev, isOpen: false }));
+        setIsSaving(true);
+        try {
+          await deleteDoc(doc(db, sem.docPath));
+          await logActivity("Deleted Semester", `${sem.semesterId} of ${sem.degreeId}`);
+          setSemesters(prev => prev.filter(s => s.docPath !== sem.docPath));
+          toast.success("Semester deleted successfully!")
+        } catch (error) {
+          console.error("Error deleting semester:", error);
+          toast.error("Delete failed: " + error.message)
+        } finally {
+          setIsSaving(false);
+        }
+      }
+    });
   };
 
   const filteredSemesters = semesters.filter(s => {
@@ -117,10 +130,16 @@ const SemesterManager = ({ setPage }) => {
   return (
     <div className="semester-manager">
       <motion.div 
-        initial={{ opacity: 0, y: 10 }}
+        initial={{ opacity: 0, y: 20 }}
         animate={{ opacity: 1, y: 0 }}
-        className="view-container"
+        exit={{ opacity: 0, y: -20 }}
+        className="dashboard-tab"
       >
+        <ConfirmModal 
+          {...confirmConfig} 
+          onCancel={() => setConfirmConfig(prev => ({ ...prev, isOpen: false }))} 
+        />
+        <div className="view-container">
         <div className="page-header-row">
           <div>
             <button className="btn-back-home" onClick={() => setPage('dashboard')}>
@@ -159,23 +178,25 @@ const SemesterManager = ({ setPage }) => {
           <table className="modern-table">
             <thead>
               <tr>
+                <th>Degree Programme</th>
                 <th>Semester ID</th>
                 <th>Academic Year</th>
                 <th>Semester Name</th>
-                <th>Degree Programme</th>
+                <th>Start Date</th>
+                <th>End Date</th>
                 <th>Actions</th>
               </tr>
             </thead>
             <tbody>
               {loading ? (
                 <tr>
-                  <td colSpan="5" style={{ textAlign: 'center', padding: '40px', color: 'var(--text-muted)' }}>
+                  <td colSpan="7" style={{ textAlign: 'center', padding: '40px', color: 'var(--text-muted)' }}>
                     Loading Semesters...
                   </td>
                 </tr>
               ) : currentSemesters.length === 0 ? (
                 <tr>
-                  <td colSpan="5" style={{ textAlign: 'center', padding: '40px', color: 'var(--text-muted)' }}>
+                  <td colSpan="7" style={{ textAlign: 'center', padding: '40px', color: 'var(--text-muted)' }}>
                     No semesters found.
                   </td>
                 </tr>
@@ -183,6 +204,9 @@ const SemesterManager = ({ setPage }) => {
                 <tr key={sem.docPath}>
                   {editingSemId === sem.docPath ? (
                     <>
+                      <td>
+                        <input type="text" className="form-input" style={{padding: '4px', fontSize: '0.9rem', backgroundColor: '#f1f5f9'}} value={editingSemData.degreeId || ''} disabled />
+                      </td>
                       <td className="id-cell">{sem.semesterId}</td>
                       <td>
                         <input type="text" className="form-input" style={{padding: '4px', fontSize: '0.9rem'}} value={editingSemData.academicYear || ''} onChange={e => setEditingSemData({...editingSemData, academicYear: e.target.value})} />
@@ -191,7 +215,10 @@ const SemesterManager = ({ setPage }) => {
                         <input type="text" className="form-input" style={{padding: '4px', fontSize: '0.9rem'}} value={editingSemData.semesterNo || ''} onChange={e => setEditingSemData({...editingSemData, semesterNo: e.target.value})} />
                       </td>
                       <td>
-                        <input type="text" className="form-input" style={{padding: '4px', fontSize: '0.9rem', backgroundColor: '#f1f5f9'}} value={editingSemData.degreeId || ''} disabled />
+                        <input type="date" className="form-input" style={{padding: '4px', fontSize: '0.9rem'}} value={editingSemData.startDate || ''} onChange={e => setEditingSemData({...editingSemData, startDate: e.target.value})} />
+                      </td>
+                      <td>
+                        <input type="date" className="form-input" style={{padding: '4px', fontSize: '0.9rem'}} value={editingSemData.endDate || ''} onChange={e => setEditingSemData({...editingSemData, endDate: e.target.value})} />
                       </td>
                       <td>
                         <div style={{ display: 'flex', gap: '8px' }}>
@@ -202,6 +229,11 @@ const SemesterManager = ({ setPage }) => {
                     </>
                   ) : (
                     <>
+                      <td>
+                        <span className="count-badge" style={{ backgroundColor: 'var(--shape-light)', color: 'var(--primary)' }}>
+                          <GraduationCap size={12} style={{ marginRight: '4px', display: 'inline' }} /> {sem.degreeId}
+                        </span>
+                      </td>
                       <td className="id-cell">{sem.semesterId}</td>
                       <td>{sem.academicYear}</td>
                       <td>
@@ -210,9 +242,10 @@ const SemesterManager = ({ setPage }) => {
                         </span>
                       </td>
                       <td>
-                        <span className="count-badge" style={{ backgroundColor: 'var(--shape-light)', color: 'var(--primary)' }}>
-                          <GraduationCap size={12} style={{ marginRight: '4px', display: 'inline' }} /> {sem.degreeId}
-                        </span>
+                        {sem.startDate || <span style={{ color: 'var(--text-muted)' }}>Not Set</span>}
+                      </td>
+                      <td>
+                        {sem.endDate || <span style={{ color: 'var(--text-muted)' }}>Not Set</span>}
                       </td>
                       <td>
                         <div style={{ display: 'flex', gap: '8px' }}>
@@ -245,6 +278,7 @@ const SemesterManager = ({ setPage }) => {
               </div>
             )}
           </div>
+        </div>
         </div>
       </motion.div>
       <style dangerouslySetInnerHTML={{ __html: `

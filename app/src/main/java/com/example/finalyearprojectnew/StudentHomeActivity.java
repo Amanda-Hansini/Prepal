@@ -191,6 +191,12 @@ public class StudentHomeActivity extends AppCompatActivity {
                             .addOnSuccessListener(resultSnap -> {
                                 if (!resultSnap.isEmpty()) {
                                     allSemesters = resultSnap.getDocuments();
+                                    
+                                    if (checkFirstSemesterIncomplete(allSemesters)) {
+                                         showFirstSemesterIncompleteDialog(allSemesters.get(0).getId());
+                                         return;
+                                     }
+
                                     calculateGpasAndPopulateUI(allSemesters);
                                     setupSemesterSelectionBar();
                                 } else {
@@ -202,6 +208,64 @@ public class StudentHomeActivity extends AppCompatActivity {
                                 }
                             });
                 });
+    }
+
+    private boolean checkFirstSemesterIncomplete(List<DocumentSnapshot> semesters) {
+        if (semesters == null || semesters.isEmpty()) return false;
+        DocumentSnapshot firstSem = semesters.get(0);
+        List<Map<String, Object>> modules = (List<Map<String, Object>>) firstSem.get("modules");
+        if (modules == null) return false;
+        for (Map<String, Object> mod : modules) {
+            String grade = (String) mod.get("grade");
+            if (grade != null && (grade.equals("MC") || grade.equals("AB") || grade.equals("NE") || grade.equals("WH") || grade.equals("INC"))) {
+                return true;
+            }
+        }
+        return false;
+    }
+
+    private void showFirstSemesterIncompleteDialog(String firstSemesterDocId) {
+        androidx.appcompat.app.AlertDialog.Builder builder = new androidx.appcompat.app.AlertDialog.Builder(this);
+        android.view.View view = getLayoutInflater().inflate(R.layout.dialog_first_semester_incomplete, null);
+        builder.setView(view);
+        builder.setCancelable(false);
+
+        androidx.appcompat.app.AlertDialog dialog = builder.create();
+        if (dialog.getWindow() != null) {
+            dialog.getWindow().setBackgroundDrawable(new android.graphics.drawable.ColorDrawable(android.graphics.Color.TRANSPARENT));
+        }
+
+        view.findViewById(R.id.btnBackToLogin).setOnClickListener(v -> {
+            dialog.dismiss();
+            getSharedPreferences("UserSession", MODE_PRIVATE).edit().clear().apply();
+            Intent intent = new Intent(StudentHomeActivity.this, MainActivity.class);
+            intent.setFlags(Intent.FLAG_ACTIVITY_NEW_TASK | Intent.FLAG_ACTIVITY_CLEAR_TASK);
+            startActivity(intent);
+            finish();
+        });
+
+        view.findViewById(R.id.btnEnterResultsNow).setOnClickListener(v -> {
+            dialog.dismiss();
+            Intent intent = new Intent(StudentHomeActivity.this, ManualResultEntryActivity.class);
+            intent.putExtra("isEditMode", true);
+            intent.putExtra("semesterDocId", firstSemesterDocId);
+            startActivity(intent);
+        });
+
+        dialog.show();
+    }
+
+    private boolean isSemesterValid(DocumentSnapshot semDoc) {
+        if (semDoc == null) return false;
+        List<Map<String, Object>> modules = (List<Map<String, Object>>) semDoc.get("modules");
+        if (modules == null) return false;
+        for (Map<String, Object> mod : modules) {
+            String grade = (String) mod.get("grade");
+            if (grade != null && (grade.equals("MC") || grade.equals("AB") || grade.equals("NE") || grade.equals("WH") || grade.equals("INC"))) {
+                return false;
+            }
+        }
+        return true;
     }
 
     private void setupSemesterSelectionBar() {
@@ -229,86 +293,93 @@ public class StudentHomeActivity extends AppCompatActivity {
                 List<Map<String, Object>> modules = (List<Map<String, Object>>) sem.get("modules");
                 setupPerformanceBarChart(modules);
                 
-                // Calculate both Semester GPA and Cumulative GPA locally to ensure 100% consistency
-                double totalPts = 0;
-                double totalCreds = 0;
-                double currentSemPts = 0;
-                double currentSemCreds = 0;
-
-                boolean cumHasSpecial = false;
-                boolean semHasSpecial = false;
-
-                for (int i = 0; i <= position; i++) {
-                    DocumentSnapshot s = allSemesters.get(i);
-                    List<Map<String, Object>> mods = (List<Map<String, Object>>) s.get("modules");
-                    if (mods == null) continue;
-                    
-                    for (Map<String, Object> m : mods) {
-                        String grade = (String) m.get("grade");
-                        if (grade != null && (grade.equals("MC") || grade.equals("AB") || grade.equals("NE") || grade.equals("WH") || grade.equals("INC"))) {
-                            cumHasSpecial = true;
-                            if (i == position) {
-                                semHasSpecial = true;
-                            }
-                            continue;
-                        }
-
-                        double c = 0;
-                        Object co = m.get("credits");
-                        if (co instanceof Double) c = (Double) co;
-                        else if (co instanceof Long) c = ((Long) co).doubleValue();
-                        
-                        double p = 0;
-                        Object po = m.get("grade_point");
-                        if (po instanceof Double) p = (Double) po;
-                        else if (po instanceof Long) p = ((Long) po).doubleValue();
-                        
-                        totalPts += (p * c);
-                        totalCreds += c;
-                        
-                        if (i == position) {
-                            currentSemPts += (p * c);
-                            currentSemCreds += c;
-                        }
-                    }
+                // Find the last valid semester index
+                int targetPos = position;
+                while (targetPos >= 0 && !isSemesterValid(allSemesters.get(targetPos))) {
+                    targetPos--;
                 }
                 
-                double semGpa = currentSemCreds > 0 ? (currentSemPts / currentSemCreds) : 0;
-                tvSemGpa.setText(semHasSpecial ? "INC" : String.format(java.util.Locale.US, "%.2f", semGpa));
-                
-                String semName = sem.getString("semesterName");
-                tvSemGpaSub.setText(semName != null ? semName : "Semester " + (position + 1));
-                tvCumGpaSub.setText("Till " + (semName != null ? semName : "Semester " + (position + 1)));
-                
-                // CGPA Formula: Sum of All Quality Points / Total Credit Hours (Sum of all attempted credits)
-                double cumGpa = totalCreds > 0 ? (totalPts / totalCreds) : 0;
-                tvCumGpa.setText(cumHasSpecial ? "INC" : String.format(java.util.Locale.US, "%.2f", cumGpa));
-                
-                // We still want to use the numeric calculation for class standing pie chart
-                setupClassStandingChart(cumGpa, cumHasSpecial);
-                
-                com.google.firebase.Timestamp semTime = sem.getTimestamp("timestamp");
-                if (semTime != null && !predictionHistory.isEmpty()) {
-                    DocumentSnapshot matchingPred = null;
-                    for (DocumentSnapshot p : predictionHistory) {
-                        com.google.firebase.Timestamp pTime = p.getTimestamp("timestamp");
-                        if (pTime != null && pTime.getSeconds() > semTime.getSeconds()) {
-                            matchingPred = p;
-                            break;
+                if (targetPos >= 0) {
+                    DocumentSnapshot validSem = allSemesters.get(targetPos);
+                    
+                    // Calculate GPAs locally for 'targetPos'
+                    double totalPts = 0;
+                    double totalCreds = 0;
+                    double currentSemPts = 0;
+                    double currentSemCreds = 0;
+
+                    for (int i = 0; i <= targetPos; i++) {
+                        DocumentSnapshot s = allSemesters.get(i);
+                        List<Map<String, Object>> mods = (List<Map<String, Object>>) s.get("modules");
+                        if (mods == null) continue;
+                        
+                        for (Map<String, Object> m : mods) {
+                            String grade = (String) m.get("grade");
+                            if (grade != null && (grade.equals("MC") || grade.equals("AB") || grade.equals("NE") || grade.equals("WH") || grade.equals("INC"))) {
+                                continue;
+                            }
+
+                            double c = 0;
+                            Object co = m.get("credits");
+                            if (co instanceof Double) c = (Double) co;
+                            else if (co instanceof Long) c = ((Long) co).doubleValue();
+                            
+                            double p = 0;
+                            Object po = m.get("grade_point");
+                            if (po instanceof Double) p = (Double) po;
+                            else if (po instanceof Long) p = ((Long) po).doubleValue();
+                            
+                            totalPts += (p * c);
+                            totalCreds += c;
+                            
+                            if (i == targetPos) {
+                                currentSemPts += (p * c);
+                                currentSemCreds += c;
+                            }
                         }
                     }
-                    if (matchingPred == null && !predictionHistory.isEmpty()) {
-                        matchingPred = predictionHistory.get(predictionHistory.size() - 1);
-                    }
                     
-                    currentPredictionDoc = matchingPred;
+                    double semGpa = currentSemCreds > 0 ? (currentSemPts / currentSemCreds) : 0;
+                    tvSemGpa.setText(String.format(java.util.Locale.US, "%.2f", semGpa));
                     
-                    if (matchingPred != null) {
-                        Double pGpa = matchingPred.getDouble("predictedGpa");
-                        tvPredGpa.setText(String.format(java.util.Locale.US, "%.2f", pGpa != null ? pGpa : 0.0));
-                        String tip = matchingPred.getString("motivationTip");
-                        if (tip != null) tvMotivationTip.setText(tip);
+                    String semName = validSem.getString("semesterName");
+                    tvSemGpaSub.setText(semName != null ? semName : "Semester " + (targetPos + 1));
+                    tvCumGpaSub.setText("Till " + (semName != null ? semName : "Semester " + (targetPos + 1)));
+                    
+                    double cumGpa = totalCreds > 0 ? (totalPts / totalCreds) : 0;
+                    tvCumGpa.setText(String.format(java.util.Locale.US, "%.2f", cumGpa));
+                    
+                    setupClassStandingChart(cumGpa, false);
+                    
+                    com.google.firebase.Timestamp semTime = validSem.getTimestamp("timestamp");
+                    if (semTime != null && !predictionHistory.isEmpty()) {
+                        DocumentSnapshot matchingPred = null;
+                        for (DocumentSnapshot p : predictionHistory) {
+                            com.google.firebase.Timestamp pTime = p.getTimestamp("timestamp");
+                            if (pTime != null && pTime.getSeconds() > semTime.getSeconds()) {
+                                matchingPred = p;
+                                break;
+                            }
+                        }
+                        if (matchingPred == null && !predictionHistory.isEmpty()) {
+                            matchingPred = predictionHistory.get(predictionHistory.size() - 1);
+                        }
+                        
+                        currentPredictionDoc = matchingPred;
+                        
+                        if (matchingPred != null) {
+                            Double pGpa = matchingPred.getDouble("predictedGpa");
+                            tvPredGpa.setText(String.format(java.util.Locale.US, "%.2f", pGpa != null ? pGpa : 0.0));
+                            String tip = matchingPred.getString("motivationTip");
+                            if (tip != null) tvMotivationTip.setText(tip);
+                        }
                     }
+                } else {
+                    // Fallback
+                    tvSemGpa.setText("INC");
+                    tvCumGpa.setText("INC");
+                    tvPredGpa.setText("0.00");
+                    setupClassStandingChart(0.0, true);
                 }
             }
         });
@@ -319,35 +390,38 @@ public class StudentHomeActivity extends AppCompatActivity {
     private void calculateGpasAndPopulateUI(List<DocumentSnapshot> semesters) {
         double totalPoints = 0;
         double totalCredits = 0;
-        double latestSemPoints = 0;
-        double latestSemCredits = 0;
-        
-        boolean cumHasSpecial = false;
-        boolean latestSemHasSpecial = false;
         
         List<Map<String, Object>> latestResults = null;
         List<Entry> gpaTrendEntries = new ArrayList<>();
         
-        for (int i = 0; i < semesters.size(); i++) {
+        // Find the last valid semester index
+        int targetPos = semesters.size() - 1;
+        while (targetPos >= 0 && !isSemesterValid(semesters.get(targetPos))) {
+            targetPos--;
+        }
+        
+        // The bar chart always displays the very latest semester results
+        if (semesters.size() > 0) {
+            DocumentSnapshot latest = semesters.get(semesters.size() - 1);
+            latestResults = (List<Map<String, Object>>) latest.get("modules");
+        }
+
+        // Calculate and build trend entries
+        double targetSemGpa = 0;
+        double targetCumGpa = 0;
+        String targetSemName = "";
+        
+        for (int i = 0; i <= targetPos; i++) {
             DocumentSnapshot sem = semesters.get(i);
             List<Map<String, Object>> modules = (List<Map<String, Object>>) sem.get("modules");
             if (modules == null) continue;
             
-            boolean isLatest = (i == semesters.size() - 1);
-            if (isLatest) { 
-                latestResults = modules;
-            }
-            
             double semPts = 0;
             double semCreds = 0;
-            boolean currentSemSpecial = false;
 
             for (Map<String, Object> mod : modules) {
                 String grade = (String) mod.get("grade");
                 if (grade != null && (grade.equals("MC") || grade.equals("AB") || grade.equals("NE") || grade.equals("WH") || grade.equals("INC"))) {
-                    cumHasSpecial = true;
-                    currentSemSpecial = true;
-                    if (isLatest) latestSemHasSpecial = true;
                     continue;
                 }
 
@@ -361,7 +435,6 @@ public class StudentHomeActivity extends AppCompatActivity {
                 if (ptObj instanceof Double) points = (Double) ptObj;
                 else if (ptObj instanceof Long) points = ((Long) ptObj).doubleValue();
 
-                
                 double pc = points * credits;
                 totalPoints += pc;
                 totalCredits += credits;
@@ -370,34 +443,56 @@ public class StudentHomeActivity extends AppCompatActivity {
             }
 
             double semGpa = semCreds > 0 ? (semPts / semCreds) : 0;
-            
-            // For the trend chart, we can just use the calculated numeric GPA, or 0 if it's completely INC.
-            // Using semGpa is fine since we skipped the INC credits.
             gpaTrendEntries.add(new Entry(i, (float) semGpa));
 
-            if (isLatest) {
-                latestSemPoints = semPts;
-                latestSemCredits = semCreds;
+            if (i == targetPos) {
+                targetSemGpa = semGpa;
+                targetCumGpa = totalCredits > 0 ? (totalPoints / totalCredits) : 0;
+                targetSemName = sem.getString("semesterName");
+                if (targetSemName == null) targetSemName = "Semester " + (i + 1);
             }
         }
 
-        // Both use exactly the same formula natively on the client
-        double latestSemGpa = latestSemCredits > 0 ? (latestSemPoints / latestSemCredits) : 0;
-        // CGPA Formula: Sum of All Quality Points / Total Credit Hours
-        double cumulativeGpa = totalCredits > 0 ? (totalPoints / totalCredits) : 0;
-        
-        tvSemGpa.setText(latestSemHasSpecial ? "INC" : String.format(java.util.Locale.US, "%.2f", latestSemGpa));
-        tvCumGpa.setText(cumHasSpecial ? "INC" : String.format(java.util.Locale.US, "%.2f", cumulativeGpa));
-        setupClassStandingChart(cumulativeGpa, cumHasSpecial);
-        
-        if (semesters.size() > 0) {
-            DocumentSnapshot latest = semesters.get(semesters.size() - 1);
-            String semName = latest.getString("semesterName");
-            tvSemGpaSub.setText(semName != null ? semName : "Semester " + semesters.size());
-            tvCumGpaSub.setText("Till " + (semName != null ? semName : "Semester " + semesters.size()));
+        if (targetPos >= 0) {
+            tvSemGpa.setText(String.format(java.util.Locale.US, "%.2f", targetSemGpa));
+            tvCumGpa.setText(String.format(java.util.Locale.US, "%.2f", targetCumGpa));
+            tvSemGpaSub.setText(targetSemName);
+            tvCumGpaSub.setText("Till " + targetSemName);
+            setupClassStandingChart(targetCumGpa, false);
+
+            // Match prediction for the valid target semester
+            DocumentSnapshot validSem = semesters.get(targetPos);
+            com.google.firebase.Timestamp semTime = validSem.getTimestamp("timestamp");
+            if (semTime != null && !predictionHistory.isEmpty()) {
+                DocumentSnapshot matchingPred = null;
+                for (DocumentSnapshot p : predictionHistory) {
+                    com.google.firebase.Timestamp pTime = p.getTimestamp("timestamp");
+                    if (pTime != null && pTime.getSeconds() > semTime.getSeconds()) {
+                        matchingPred = p;
+                        break;
+                    }
+                }
+                if (matchingPred == null && !predictionHistory.isEmpty()) {
+                    matchingPred = predictionHistory.get(predictionHistory.size() - 1);
+                }
+                
+                currentPredictionDoc = matchingPred;
+                
+                if (matchingPred != null) {
+                    Double pGpa = matchingPred.getDouble("predictedGpa");
+                    tvPredGpa.setText(String.format(java.util.Locale.US, "%.2f", pGpa != null ? pGpa : 0.0));
+                    String tip = matchingPred.getString("motivationTip");
+                    if (tip != null) tvMotivationTip.setText(tip);
+                }
+            }
+        } else {
+            tvSemGpa.setText("INC");
+            tvCumGpa.setText("INC");
+            tvSemGpaSub.setText("Semester " + semesters.size());
+            tvCumGpaSub.setText("Till Semester " + semesters.size());
+            setupClassStandingChart(0.0, true);
         }
 
-        
         setupGpaTrendChart(gpaTrendEntries);
         setupPerformanceBarChart(latestResults);
     }
@@ -428,7 +523,7 @@ public class StudentHomeActivity extends AppCompatActivity {
             predictionEntries.add(new Entry(lastHistory.getX() + 1, predValue));
 
             LineDataSet predictionDataSet = new LineDataSet(predictionEntries, "Prediction");
-            styleLineDataSet(predictionDataSet, Color.parseColor("#057BFE"), false);
+            styleLineDataSet(predictionDataSet, Color.parseColor("#7C3AED"), false);
             predictionDataSet.enableDashedLine(10f, 10f, 0f);
             lineData.addDataSet(predictionDataSet);
         }

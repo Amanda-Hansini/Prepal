@@ -35,16 +35,9 @@ const Profile = ({ currentAdmin, setPage, onLogout }) => {
   const [showNewPassword, setShowNewPassword] = useState(false);
   const [showConfirmPassword, setShowConfirmPassword] = useState(false);
   
-  // Settings switches (synced with localStorage to replicate Android SharedPreferences)
-  const [settings2FA, setSettings2FA] = useState(() => {
-    return localStorage.getItem('admin_settings_2fa') === 'true';
-  });
-  const [settingsEmailNotif, setSettingsEmailNotif] = useState(() => {
-    return localStorage.getItem('admin_settings_email') !== 'false'; // default true
-  });
-  const [settingsSystemAlerts, setSettingsSystemAlerts] = useState(() => {
-    return localStorage.getItem('admin_settings_alerts') !== 'false'; // default true
-  });
+  // Settings switches (synced with Firestore and localStorage to replicate Android SharedPreferences)
+  const [settingsEmailNotif, setSettingsEmailNotif] = useState(currentAdmin?.emailAlertsEnabled !== false); // default true
+  const [settingsSystemAlerts, setSettingsSystemAlerts] = useState(currentAdmin?.systemAlertsEnabled !== false); // default true
 
   // UI state
   const [isLoading, setIsLoading] = useState(false);
@@ -58,6 +51,8 @@ const Profile = ({ currentAdmin, setPage, onLogout }) => {
     if (currentAdmin) {
       setFullName(currentAdmin.full_name || '');
       setEmail(currentAdmin.email || '');
+      setSettingsEmailNotif(currentAdmin.emailAlertsEnabled !== false);
+      setSettingsSystemAlerts(currentAdmin.systemAlertsEnabled !== false);
     }
   }, [currentAdmin]);
 
@@ -174,23 +169,34 @@ const Profile = ({ currentAdmin, setPage, onLogout }) => {
     }
   };
 
-  // 3. Handle Local Settings Changes (mirroring Android SharedPreferences toggles)
-  const handleToggle2FA = (checked) => {
-    setSettings2FA(checked);
-    localStorage.setItem('admin_settings_2fa', checked.toString());
-    logActivity('Settings Changed', `2FA setting changed to: ${checked ? 'ON' : 'OFF'}`);
-  };
+  // 3. Handle Local Settings Changes (mirroring Android SharedPreferences toggles and syncing with Firestore)
 
-  const handleToggleEmailNotif = (checked) => {
+  const handleToggleEmailNotif = async (checked) => {
     setSettingsEmailNotif(checked);
     localStorage.setItem('admin_settings_email', checked.toString());
-    logActivity('Settings Changed', `Email Notifications setting changed to: ${checked ? 'ON' : 'OFF'}`);
+    try {
+      const adminDocRef = doc(db, 'Admins', currentAdmin.adminId);
+      await updateDoc(adminDocRef, {
+        emailAlertsEnabled: checked
+      });
+      await logActivity('Settings Changed', `Email Notifications setting changed to: ${checked ? 'ON' : 'OFF'}`);
+    } catch (err) {
+      console.error("Error updating email alerts in Firestore: ", err);
+    }
   };
 
-  const handleToggleSystemAlerts = (checked) => {
+  const handleToggleSystemAlerts = async (checked) => {
     setSettingsSystemAlerts(checked);
     localStorage.setItem('admin_settings_alerts', checked.toString());
-    logActivity('Settings Changed', `System Alerts setting changed to: ${checked ? 'ON' : 'OFF'}`);
+    try {
+      const adminDocRef = doc(db, 'Admins', currentAdmin.adminId);
+      await updateDoc(adminDocRef, {
+        systemAlertsEnabled: checked
+      });
+      await logActivity('Settings Changed', `System Alerts setting changed to: ${checked ? 'ON' : 'OFF'}`);
+    } catch (err) {
+      console.error("Error updating system alerts in Firestore: ", err);
+    }
   };
 
   // 4. Handle change password
@@ -363,22 +369,6 @@ const Profile = ({ currentAdmin, setPage, onLogout }) => {
             </div>
 
             <div className="settings-toggles-container">
-              {/* 2FA switch */}
-              <div className="setting-toggle-item">
-                <div className="toggle-label-section">
-                  <span className="toggle-main-label">Two-Factor Authentication</span>
-                  <span className="toggle-sub-label">Request confirmation on new log ins.</span>
-                </div>
-                <label className="switch-container">
-                  <input 
-                    type="checkbox" 
-                    checked={settings2FA} 
-                    onChange={(e) => handleToggle2FA(e.target.checked)} 
-                  />
-                  <span className="switch-slider"></span>
-                </label>
-              </div>
-
               {/* Email Notifications */}
               <div className="setting-toggle-item">
                 <div className="toggle-label-section">

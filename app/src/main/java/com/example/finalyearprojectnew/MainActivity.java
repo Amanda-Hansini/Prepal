@@ -106,18 +106,14 @@ public class MainActivity extends AppCompatActivity {
                             String storedHashedPassword = documentSnapshot.getString("hashed_password");
                             String enteredHashedPassword = SecurityUtils.hashPassword(password);
 
-                            if (enteredHashedPassword.equals(storedHashedPassword)) {
-                                loginAttempts = 0; // Reset on success
-                                String adminId = documentSnapshot.getString("admin_id");
-                                String adminEmail = documentSnapshot.getString("email");
-                                Boolean twoFactorEnabled = documentSnapshot.getBoolean("twoFactorEnabled");
-
-                                if (Boolean.TRUE.equals(twoFactorEnabled)) {
-                                    send2FAOtp(adminId, adminEmail, documentSnapshot);
-                                } else {
-                                    completeAdminLogin(adminId, documentSnapshot);
-                                }
-                            } else {
+                             if (enteredHashedPassword.equals(storedHashedPassword)) {
+                                 loginAttempts = 0; // Reset on success
+                                 String adminId = documentSnapshot.getString("admin_id");
+                                 if (adminId == null || adminId.isEmpty()) {
+                                     adminId = documentSnapshot.getId();
+                                 }
+                                 completeAdminLogin(adminId, documentSnapshot);
+                             } else {
                                 btnLogin.setEnabled(true);
                                 loginAttempts++;
                                 if (loginAttempts >= 5) {
@@ -139,14 +135,10 @@ public class MainActivity extends AppCompatActivity {
                                             if (enteredHashedPassword.equals(storedHashedPassword)) {
                                                 loginAttempts = 0;
                                                 String adminId = adminDoc.getString("admin_id");
-                                                String adminEmail = adminDoc.getString("email");
-                                                Boolean twoFactorEnabled = adminDoc.getBoolean("twoFactorEnabled");
-
-                                                if (Boolean.TRUE.equals(twoFactorEnabled)) {
-                                                    send2FAOtp(adminId, adminEmail, adminDoc);
-                                                } else {
-                                                    completeAdminLogin(adminId, adminDoc);
+                                                if (adminId == null || adminId.isEmpty()) {
+                                                    adminId = adminDoc.getId();
                                                 }
+                                                completeAdminLogin(adminId, adminDoc);
                                             } else {
                                                 btnLogin.setEnabled(true);
                                                 loginAttempts++;
@@ -190,20 +182,47 @@ public class MainActivity extends AppCompatActivity {
         });
     }
 
-    private void checkStudentLogin(String studentId, String password, FirebaseFirestore db) {
-        // Use the flat AllStudents collection for direct lookup
-        db.collection("AllStudents").document(studentId).get()
+    private void checkStudentLogin(final String studentId, final String password, final FirebaseFirestore db) {
+        final String upperId = studentId.toUpperCase();
+        final String lowerId = studentId.toLowerCase();
+
+        // Try uppercase first (standardized for new records)
+        db.collection("AllStudents").document(upperId).get()
                 .addOnSuccessListener(studentDoc -> {
                     if (studentDoc.exists()) {
                         handleStudentDocument(studentDoc, password, db);
                     } else {
-                        btnLogin.setEnabled(true);
-                        loginAttempts++;
-                        if (loginAttempts >= 5) {
-                            showAccountLockedDialog("Account Locked", "Your account has been locked. To continue using PrePal, please contact the support team.");
-                        } else {
-                            showLoginFailedDialog(5 - loginAttempts);
-                        }
+                        // Fallback 1: Try lowercase (common historical entries)
+                        db.collection("AllStudents").document(lowerId).get()
+                                .addOnSuccessListener(studentDocLower -> {
+                                    if (studentDocLower.exists()) {
+                                        handleStudentDocument(studentDocLower, password, db);
+                                    } else {
+                                        // Fallback 2: Try exact casing entered
+                                        db.collection("AllStudents").document(studentId).get()
+                                                .addOnSuccessListener(studentDocExact -> {
+                                                    if (studentDocExact.exists()) {
+                                                        handleStudentDocument(studentDocExact, password, db);
+                                                    } else {
+                                                        btnLogin.setEnabled(true);
+                                                        loginAttempts++;
+                                                        if (loginAttempts >= 5) {
+                                                            showAccountLockedDialog("Account Locked", "Your account has been locked. To continue using PrePal, please contact the support team.");
+                                                        } else {
+                                                            showLoginFailedDialog(5 - loginAttempts);
+                                                        }
+                                                    }
+                                                })
+                                                .addOnFailureListener(e -> {
+                                                    btnLogin.setEnabled(true);
+                                                    showErrorDialog("Database Error", e.getMessage());
+                                                });
+                                    }
+                                })
+                                .addOnFailureListener(e -> {
+                                    btnLogin.setEnabled(true);
+                                    showErrorDialog("Database Error", e.getMessage());
+                                });
                     }
                 })
                 .addOnFailureListener(e -> {
@@ -215,7 +234,7 @@ public class MainActivity extends AppCompatActivity {
     private void handleStudentDocument(DocumentSnapshot studentDoc, String password, FirebaseFirestore db) {
         String storedHashedPassword = studentDoc.getString("hashed_password");
         String status = studentDoc.getString("status");
-        Boolean isFirstLogin = studentDoc.getBoolean("isFirstLogin");
+        final Boolean isFirstLogin = studentDoc.getBoolean("isFirstLogin");
 
         if ("inactive".equalsIgnoreCase(status)) {
             btnLogin.setEnabled(true);
@@ -225,31 +244,49 @@ public class MainActivity extends AppCompatActivity {
 
         String enteredHashedPassword = SecurityUtils.hashPassword(password);
         if (enteredHashedPassword.equals(storedHashedPassword)) {
-            loginAttempts = 0;
-            getSharedPreferences("UserSession", MODE_PRIVATE)
-                    .edit()
-                    .putString("student_id", studentDoc.getString("studentId"))
-                    .putString("student_name", studentDoc.getString("name"))
-                    .putString("degree", studentDoc.getString("degree"))
-                    .putString("user_type", "student")
-                    .apply();
-
-            if (Boolean.TRUE.equals(isFirstLogin)) {
-                Intent intent = new Intent(MainActivity.this, ChangePasswordActivity.class);
-                intent.putExtra("STUDENT_ID", studentDoc.getString("studentId"));
-                intent.putExtra("DOCUMENT_PATH", studentDoc.getReference().getPath());
-                startActivity(intent);
-            } else {
-                Boolean resultsEntered = studentDoc.getBoolean("resultsEntered");
-                if (Boolean.FALSE.equals(resultsEntered) || resultsEntered == null) {
-                    Intent intent = new Intent(MainActivity.this, ManualResultEntryActivity.class);
-                    startActivity(intent);
-                    finish();
-                } else {
-                    Intent intent = new Intent(MainActivity.this, StudentHomeActivity.class);
-                    startActivity(intent);
-                    finish();
+            // Resolve program ID contextually
+            String programId = studentDoc.getString("programId");
+            if (programId == null || programId.isEmpty()) {
+                programId = studentDoc.getString("degree");
+            }
+            if (programId == null || programId.isEmpty()) {
+                String batchId = studentDoc.getString("batchId");
+                if (batchId != null && !batchId.isEmpty()) {
+                    int index = batchId.indexOf('(');
+                    if (index > 0) {
+                        programId = batchId.substring(0, index).trim();
+                    } else {
+                        index = batchId.indexOf(' ');
+                        if (index > 0) {
+                            programId = batchId.substring(0, index).trim();
+                        } else {
+                            programId = batchId.trim();
+                        }
+                    }
                 }
+            }
+
+            if (programId != null && !programId.isEmpty()) {
+                final String finalProgramId = programId;
+                db.collection("Degrees").document(programId).get()
+                        .addOnSuccessListener(degreeDoc -> {
+                            if (degreeDoc.exists()) {
+                                String degreeStatus = degreeDoc.getString("status");
+                                if ("inactive".equalsIgnoreCase(degreeStatus)) {
+                                    btnLogin.setEnabled(true);
+                                    showAccountLockedDialog("Program Inactive", "Your degree program (" + finalProgramId + ") is currently deactivated. Please contact your administrator.");
+                                } else {
+                                    proceedWithStudentLogin(studentDoc, isFirstLogin);
+                                }
+                            } else {
+                                proceedWithStudentLogin(studentDoc, isFirstLogin);
+                            }
+                        })
+                        .addOnFailureListener(e -> {
+                            proceedWithStudentLogin(studentDoc, isFirstLogin);
+                        });
+            } else {
+                proceedWithStudentLogin(studentDoc, isFirstLogin);
             }
         } else {
             btnLogin.setEnabled(true);
@@ -258,6 +295,35 @@ public class MainActivity extends AppCompatActivity {
                 showAccountLockedDialog("Account Locked", "Your account has been locked. To continue using PrePal, please contact the support team.");
             } else {
                 showLoginFailedDialog(5 - loginAttempts);
+            }
+        }
+    }
+
+    private void proceedWithStudentLogin(DocumentSnapshot studentDoc, Boolean isFirstLogin) {
+        loginAttempts = 0;
+        getSharedPreferences("UserSession", MODE_PRIVATE)
+                .edit()
+                .putString("student_id", studentDoc.getString("studentId"))
+                .putString("student_name", studentDoc.getString("name"))
+                .putString("degree", studentDoc.getString("degree"))
+                .putString("user_type", "student")
+                .apply();
+
+        if (Boolean.TRUE.equals(isFirstLogin)) {
+            Intent intent = new Intent(MainActivity.this, ChangePasswordActivity.class);
+            intent.putExtra("STUDENT_ID", studentDoc.getString("studentId"));
+            intent.putExtra("DOCUMENT_PATH", studentDoc.getReference().getPath());
+            startActivity(intent);
+        } else {
+            Boolean resultsEntered = studentDoc.getBoolean("resultsEntered");
+            if (Boolean.FALSE.equals(resultsEntered) || resultsEntered == null) {
+                Intent intent = new Intent(MainActivity.this, ManualResultEntryActivity.class);
+                startActivity(intent);
+                finish();
+            } else {
+                Intent intent = new Intent(MainActivity.this, StudentHomeActivity.class);
+                startActivity(intent);
+                finish();
             }
         }
     }
@@ -354,130 +420,5 @@ public class MainActivity extends AppCompatActivity {
         finish();
     }
 
-    private void send2FAOtp(String adminId, String adminEmail, DocumentSnapshot adminDoc) {
-        String otp = String.format("%06d", new java.util.Random().nextInt(1000000));
-        long expiryTime = System.currentTimeMillis() + (5 * 60 * 1000); // 5 minutes expiry
 
-        java.util.Map<String, Object> verificationData = new java.util.HashMap<>();
-        verificationData.put("code", otp);
-        verificationData.put("expiresAt", expiryTime);
-
-        FirebaseFirestore.getInstance().collection("Admins").document(adminDoc.getId())
-                .update("twoFactorVerification", verificationData)
-                .addOnSuccessListener(aVoid -> {
-                    // Queue the 2FA Email Document to trigger delivery
-                    java.util.Map<String, Object> emailDoc = new java.util.HashMap<>();
-                    emailDoc.put("to", adminEmail != null ? adminEmail : adminDoc.getId());
-                    java.util.Map<String, Object> message = new java.util.HashMap<>();
-                    message.put("subject", "PrePal Two-Factor Authentication OTP");
-                    message.put("text", "Your PrePal login verification code is: " + otp + ". This code will expire in 5 minutes.");
-                    emailDoc.put("message", message);
-
-                    FirebaseFirestore.getInstance().collection("2FA_Emails").add(emailDoc);
-
-                    // Alert test mode with a Toast
-                    Toast.makeText(MainActivity.this, "[TEST MODE] OTP Sent to Email: " + otp, Toast.LENGTH_LONG).show();
-
-                    btnLogin.setEnabled(true);
-                    show2FaVerificationDialog(adminId, adminDoc, otp);
-                })
-                .addOnFailureListener(e -> {
-                    btnLogin.setEnabled(true);
-                    Toast.makeText(MainActivity.this, "2FA Initialization Failed: " + e.getMessage(), Toast.LENGTH_SHORT).show();
-                });
-    }
-
-    private void show2FaVerificationDialog(String adminId, DocumentSnapshot adminDoc, String correctOtp) {
-        AlertDialog.Builder builder = new AlertDialog.Builder(MainActivity.this);
-        android.widget.LinearLayout layout = new android.widget.LinearLayout(this);
-        layout.setOrientation(android.widget.LinearLayout.VERTICAL);
-        layout.setPadding(60, 40, 60, 40);
-
-        TextView tvTitle = new TextView(this);
-        tvTitle.setText("Two-Factor Verification");
-        tvTitle.setTextSize(20);
-        tvTitle.setTextColor(getResources().getColor(R.color.textColorPrimary, getTheme()));
-        tvTitle.setTypeface(null, android.graphics.Typeface.BOLD);
-        layout.addView(tvTitle);
-
-        TextView tvSub = new TextView(this);
-        tvSub.setText("A 6-digit verification code has been sent to your email. Enter the code below to complete your login.");
-        tvSub.setTextSize(14);
-        tvSub.setPadding(0, 16, 0, 16);
-        tvSub.setTextColor(getResources().getColor(R.color.textColorSecondary, getTheme()));
-        layout.addView(tvSub);
-
-        EditText etOtp = new EditText(this);
-        etOtp.setHint("Enter 6-Digit Code");
-        etOtp.setInputType(InputType.TYPE_CLASS_NUMBER);
-        etOtp.setTextSize(16);
-        etOtp.setGravity(android.view.Gravity.CENTER);
-        etOtp.setBackgroundResource(R.drawable.bg_rounded_input);
-        etOtp.setPadding(20, 24, 20, 24);
-        layout.addView(etOtp);
-
-        androidx.cardview.widget.CardView card = new androidx.cardview.widget.CardView(this);
-        card.setRadius(32);
-        card.setCardBackgroundColor(getResources().getColor(R.color.inputBackground, getTheme()));
-        card.setCardElevation(12);
-        card.addView(layout);
-
-        builder.setView(card);
-        AlertDialog finalDialog = builder.create();
-        if (finalDialog.getWindow() != null) {
-            finalDialog.getWindow().setBackgroundDrawableResource(android.R.color.transparent);
-        }
-
-        AppCompatButton btnVerify = new AppCompatButton(this);
-        btnVerify.setText("Verify & Log In");
-        btnVerify.setTextColor(android.graphics.Color.WHITE);
-        btnVerify.setTextSize(15);
-        btnVerify.setTypeface(null, android.graphics.Typeface.BOLD);
-        btnVerify.setBackgroundResource(R.drawable.bg_gradient_button);
-        btnVerify.setAllCaps(false);
-        android.widget.LinearLayout.LayoutParams params = new android.widget.LinearLayout.LayoutParams(
-                android.widget.LinearLayout.LayoutParams.MATCH_PARENT, 120
-        );
-        params.setMargins(0, 32, 0, 0);
-        btnVerify.setLayoutParams(params);
-        layout.addView(btnVerify);
-
-        btnVerify.setOnClickListener(v -> {
-            String enteredCode = etOtp.getText().toString().trim();
-            if (enteredCode.length() != 6) {
-                etOtp.setError("Code must be 6 digits");
-                return;
-            }
-
-            FirebaseFirestore.getInstance().collection("Admins").document(adminDoc.getId()).get()
-                    .addOnSuccessListener(latestSnap -> {
-                        if (latestSnap.exists()) {
-                            java.util.Map<String, Object> verification = (java.util.Map<String, Object>) latestSnap.get("twoFactorVerification");
-                            if (verification != null) {
-                                String code = (String) verification.get("code");
-                                Long expiry = (Long) verification.get("expiresAt");
-
-                                if (code != null && code.equals(enteredCode)) {
-                                    if (expiry != null && System.currentTimeMillis() <= expiry) {
-                                        finalDialog.dismiss();
-                                        Toast.makeText(MainActivity.this, "OTP Verified!", Toast.LENGTH_SHORT).show();
-                                        completeAdminLogin(adminId, adminDoc);
-                                    } else {
-                                        etOtp.setError("Verification code has expired");
-                                    }
-                                } else {
-                                    etOtp.setError("Invalid verification code");
-                                }
-                            } else {
-                                etOtp.setError("No verification request found");
-                            }
-                        }
-                    })
-                    .addOnFailureListener(e -> {
-                        Toast.makeText(MainActivity.this, "Verification failed: " + e.getMessage(), Toast.LENGTH_SHORT).show();
-                    });
-        });
-
-        finalDialog.show();
-    }
 }

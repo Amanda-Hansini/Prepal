@@ -1,10 +1,12 @@
 import React, { useState, useEffect } from 'react';
+import toast from "react-hot-toast";
 import { motion } from 'framer-motion';
 import { Search, Plus, Check, X, Edit2, Trash2, Home, Box, Upload, GraduationCap } from 'lucide-react';
 import * as XLSX from 'xlsx';
 import { collectionGroup, getDocs, doc, deleteDoc, updateDoc, writeBatch } from 'firebase/firestore';
 import { db } from '../firebase';
 import { logActivity } from '../utils/activityLogger';
+import ConfirmModal from '../components/ConfirmModal';
 
 const ModuleManager = ({ setPage }) => {
   const [modules, setModules] = useState([]);
@@ -21,6 +23,8 @@ const ModuleManager = ({ setPage }) => {
   // Editing state
   const [editingModId, setEditingModId] = useState(null);
   const [editingModData, setEditingModData] = useState({});
+
+  const [confirmConfig, setConfirmConfig] = useState({ isOpen: false, title: '', message: '', onConfirm: null });
 
   // Bulk Upload states
   const [isBulkOpen, setIsBulkOpen] = useState(false);
@@ -64,7 +68,12 @@ const ModuleManager = ({ setPage }) => {
 
   const handleSaveModule = async () => {
     if (!editingModData.moduleCode || !editingModData.moduleName || !editingModData.credits) {
-      alert("All fields are required!");
+      toast.error("All fields are required!")
+      return;
+    }
+    const creditVal = parseFloat(editingModData.credits);
+    if (isNaN(creditVal) || creditVal < 1) {
+      toast.error("Module credits must be a valid number and cannot be less than 1!")
       return;
     }
     setIsSaving(true);
@@ -81,29 +90,36 @@ const ModuleManager = ({ setPage }) => {
 
       setModules(prev => prev.map(m => m.docPath === editingModId ? { ...m, ...updateData } : m));
       setEditingModId(null);
-      alert("Module updated successfully!");
+      toast.success("Module updated successfully!")
     } catch (error) {
       console.error("Error updating module:", error);
-      alert("Update failed: " + error.message);
+      toast.error("Update failed: " + error.message)
     } finally {
       setIsSaving(false);
     }
   };
 
-  const handleDeleteModule = async (mod) => {
-    if (!window.confirm(`Are you sure you want to delete module ${mod.moduleCode}?`)) return;
-    setIsSaving(true);
-    try {
-      await deleteDoc(doc(db, mod.docPath));
-      await logActivity("Deleted Module", `${mod.moduleCode}: ${mod.moduleName}`);
-      setModules(prev => prev.filter(m => m.docPath !== mod.docPath));
-      alert("Module deleted successfully!");
-    } catch (error) {
-      console.error("Error deleting module:", error);
-      alert("Delete failed: " + error.message);
-    } finally {
-      setIsSaving(false);
-    }
+  const handleDeleteModule = (mod) => {
+    setConfirmConfig({
+      isOpen: true,
+      title: 'Delete Module',
+      message: `Are you sure you want to delete module ${mod.moduleCode}?`,
+      onConfirm: async () => {
+        setConfirmConfig(prev => ({ ...prev, isOpen: false }));
+        setIsSaving(true);
+        try {
+          await deleteDoc(doc(db, mod.docPath));
+          await logActivity("Deleted Module", `${mod.moduleCode}: ${mod.moduleName}`);
+          setModules(prev => prev.filter(m => m.docPath !== mod.docPath));
+          toast.success("Module deleted successfully!")
+        } catch (error) {
+          console.error("Error deleting module:", error);
+          toast.error("Delete failed: " + error.message)
+        } finally {
+          setIsSaving(false);
+        }
+      }
+    });
   };
 
   const handleFileUpload = (e) => {
@@ -194,15 +210,15 @@ const ModuleManager = ({ setPage }) => {
             semesterId: resolvedSemId,
             moduleCode: String(rawCode).trim(),
             moduleName: String(rawName).trim(),
-            credits: parseInt(String(rawCredits || '3').trim(), 10)
+            credits: Math.max(parseInt(String(rawCredits || '3').trim(), 10) || 3, 1)
           };
         }).filter(m => m.moduleCode && m.semesterId && !m.moduleCode.toLowerCase().startsWith('total') && !m.moduleName.toLowerCase().startsWith('total'));
 
         setParsedModules(parsed);
-        alert(`Parsed ${parsed.length} modules successfully.`);
+        toast.success(`Parsed ${parsed.length} modules successfully.`)
       } catch (error) {
         console.error("Error parsing file:", error);
-        alert("Failed to parse file. Please upload a valid Excel or CSV.");
+        toast.error("Failed to parse file. Please upload a valid Excel or CSV.")
       }
     };
     reader.readAsBinaryString(file);
@@ -210,7 +226,7 @@ const ModuleManager = ({ setPage }) => {
 
   const handleSaveBulkModules = async () => {
     if (!targetDegree || parsedModules.length === 0) {
-      alert("Please select a target Programme first!");
+      toast.error("Please select a target Programme first!")
       return;
     }
     setIsSaving(true);
@@ -237,13 +253,13 @@ const ModuleManager = ({ setPage }) => {
 
       await batchCommit.commit();
       await logActivity("Imported Modules", `Bulk imported ${parsedModules.length} modules for ${targetDegree}`);
-      alert(`Bulk imported ${parsedModules.length} modules!`);
+      toast.success(`Bulk imported ${parsedModules.length} modules!`)
       setModules(prev => [...prev, ...newModulesList]);
       setIsBulkOpen(false);
       setParsedModules([]);
     } catch (error) {
       console.error("Error bulk uploading modules:", error);
-      alert("Failed: " + error.message);
+      toast.error("Failed: " + error.message)
     } finally {
       setIsSaving(false);
     }
@@ -267,10 +283,16 @@ const ModuleManager = ({ setPage }) => {
   return (
     <div className="module-manager">
       <motion.div 
-        initial={{ opacity: 0, y: 10 }}
+        initial={{ opacity: 0, y: 20 }}
         animate={{ opacity: 1, y: 0 }}
-        className="view-container"
+        exit={{ opacity: 0, y: -20 }}
+        className="dashboard-tab"
       >
+        <ConfirmModal 
+          {...confirmConfig} 
+          onCancel={() => setConfirmConfig(prev => ({ ...prev, isOpen: false }))} 
+        />
+        <div className="view-container">
         <div className="page-header-row">
           <div>
             <button className="btn-back-home" onClick={() => setPage('dashboard')}>
@@ -279,9 +301,6 @@ const ModuleManager = ({ setPage }) => {
             <h1 className="page-title">Global Module Management</h1>
             <p className="page-subtitle">Search, review, and import modules across academic plans.</p>
           </div>
-          <button className="btn-primary" onClick={() => { setIsBulkOpen(true); setParsedModules([]); }}>
-            <Plus size={18} /> Bulk Import Modules
-          </button>
         </div>
 
         <div className="glass-panel table-container">
@@ -314,9 +333,9 @@ const ModuleManager = ({ setPage }) => {
           <table className="modern-table">
             <thead>
               <tr>
+                <th>Degree Programme</th>
                 <th>Module Code</th>
                 <th>Module Name</th>
-                <th>Degree Programme</th>
                 <th>Semester</th>
                 <th>Credits</th>
                 <th>Actions</th>
@@ -339,14 +358,14 @@ const ModuleManager = ({ setPage }) => {
                 <tr key={mod.docPath}>
                   {editingModId === mod.docPath ? (
                     <>
+                      <td>
+                        <input type="text" className="form-input" style={{padding: '4px', fontSize: '0.9rem', backgroundColor: '#f1f5f9'}} value={editingModData.degreeId || ''} disabled />
+                      </td>
                       <td className="id-cell">
                         <input type="text" className="form-input" style={{padding: '4px', fontSize: '0.9rem'}} value={editingModData.moduleCode || ''} onChange={e => setEditingModData({...editingModData, moduleCode: e.target.value})} />
                       </td>
                       <td>
                         <input type="text" className="form-input" style={{padding: '4px', fontSize: '0.9rem'}} value={editingModData.moduleName || ''} onChange={e => setEditingModData({...editingModData, moduleName: e.target.value})} />
-                      </td>
-                      <td>
-                        <input type="text" className="form-input" style={{padding: '4px', fontSize: '0.9rem', backgroundColor: '#f1f5f9'}} value={editingModData.degreeId || ''} disabled />
                       </td>
                       <td>
                         <input type="text" className="form-input" style={{padding: '4px', fontSize: '0.9rem'}} value={editingModData.semesterId || ''} onChange={e => setEditingModData({...editingModData, semesterId: e.target.value})} />
@@ -363,13 +382,13 @@ const ModuleManager = ({ setPage }) => {
                     </>
                   ) : (
                     <>
-                      <td className="id-cell">{mod.moduleCode}</td>
-                      <td>{mod.moduleName}</td>
                       <td>
                         <span className="count-badge" style={{ backgroundColor: 'var(--shape-light)', color: 'var(--primary)' }}>
                           <GraduationCap size={12} style={{ marginRight: '4px', display: 'inline' }} /> {mod.degreeId}
                         </span>
                       </td>
+                      <td className="id-cell">{mod.moduleCode}</td>
+                      <td>{mod.moduleName}</td>
                       <td>
                         <span className="count-badge" style={{ backgroundColor: 'rgba(5, 123, 254, 0.1)', color: 'var(--accent)' }}>
                           {mod.semesterId}
@@ -407,6 +426,7 @@ const ModuleManager = ({ setPage }) => {
               </div>
             )}
           </div>
+        </div>
         </div>
       </motion.div>
 

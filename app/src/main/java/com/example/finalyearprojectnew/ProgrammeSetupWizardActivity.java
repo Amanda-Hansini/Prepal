@@ -20,6 +20,7 @@ import com.google.android.gms.tasks.Task;
 import com.google.android.gms.tasks.Tasks;
 import com.google.firebase.firestore.DocumentSnapshot;
 import com.google.firebase.firestore.FirebaseFirestore;
+import com.google.firebase.firestore.QuerySnapshot;
 import com.google.firebase.firestore.WriteBatch;
 
 import java.util.ArrayList;
@@ -290,9 +291,126 @@ public class ProgrammeSetupWizardActivity extends AppCompatActivity {
             updateStepUI();
             
         } else if (currentStep == 4) {
-            // Step 4 (Students) - optional to enroll immediately, but validates local list duplicates if they exist
-            currentStep++;
-            updateStepUI();
+            // Step 4 (Students) - require at least one student, and enforce unique IDs and Emails locally and system-wide
+            if (localStudentsList.isEmpty()) {
+                Toast.makeText(this, "At least one student must be enrolled before proceeding!", Toast.LENGTH_SHORT).show();
+                return;
+            }
+
+            // Check local duplicates in the list
+            List<String> localDuplicateIds = new ArrayList<>();
+            List<String> localDuplicateEmails = new ArrayList<>();
+            for (int i = 0; i < localStudentsList.size(); i++) {
+                TempStudent outer = localStudentsList.get(i);
+                for (int j = i + 1; j < localStudentsList.size(); j++) {
+                    TempStudent inner = localStudentsList.get(j);
+                    if (outer.studentId.equalsIgnoreCase(inner.studentId)) {
+                        if (!localDuplicateIds.contains(outer.studentId)) {
+                            localDuplicateIds.add(outer.studentId);
+                        }
+                    }
+                    if (outer.email.equalsIgnoreCase(inner.email)) {
+                        if (!localDuplicateEmails.contains(outer.email)) {
+                            localDuplicateEmails.add(outer.email);
+                        }
+                    }
+                }
+            }
+
+            if (!localDuplicateIds.isEmpty() || !localDuplicateEmails.isEmpty()) {
+                StringBuilder msg = new StringBuilder("The following local duplicates were found in your student roster:\n\n");
+                if (!localDuplicateIds.isEmpty()) {
+                    msg.append("Duplicate Student IDs: ").append(TextUtils.join(", ", localDuplicateIds)).append("\n");
+                }
+                if (!localDuplicateEmails.isEmpty()) {
+                    msg.append("Duplicate Student Emails: ").append(TextUtils.join(", ", localDuplicateEmails)).append("\n");
+                }
+                msg.append("\nPlease edit the list to ensure all student records are unique.");
+
+                new androidx.appcompat.app.AlertDialog.Builder(this)
+                        .setTitle("Local Duplicates Detected")
+                        .setMessage(msg.toString())
+                        .setPositiveButton("OK", null)
+                        .show();
+                return;
+            }
+
+            // Check system-wide duplicates in Firestore AllStudents collection
+            btnNext.setEnabled(false);
+            btnNext.setText("Verifying Students...");
+            btnPrevious.setEnabled(false);
+
+            FirebaseFirestore db = FirebaseFirestore.getInstance();
+            List<Task<?>> tasksList = new ArrayList<>();
+            List<Task<DocumentSnapshot>> idTasks = new ArrayList<>();
+            List<Task<com.google.firebase.firestore.QuerySnapshot>> emailTasks = new ArrayList<>();
+            List<String> checkedIds = new ArrayList<>();
+            List<String> checkedEmails = new ArrayList<>();
+
+            for (TempStudent s : localStudentsList) {
+                Task<DocumentSnapshot> idTask = db.collection("AllStudents").document(s.studentId).get();
+                tasksList.add(idTask);
+                idTasks.add(idTask);
+                checkedIds.add(s.studentId);
+
+                Task<com.google.firebase.firestore.QuerySnapshot> emailTask = db.collection("AllStudents").whereEqualTo("email", s.email).get();
+                tasksList.add(emailTask);
+                emailTasks.add(emailTask);
+                checkedEmails.add(s.email);
+            }
+
+            Tasks.whenAllComplete(tasksList).addOnCompleteListener(allTasks -> {
+                btnNext.setEnabled(true);
+                btnNext.setText("Next Step");
+                btnPrevious.setEnabled(true);
+
+                List<String> systemDuplicateIds = new ArrayList<>();
+                List<String> systemDuplicateEmails = new ArrayList<>();
+
+                // Process ID Tasks
+                for (int i = 0; i < idTasks.size(); i++) {
+                    Task<DocumentSnapshot> t = idTasks.get(i);
+                    if (t.isSuccessful() && t.getResult() != null) {
+                        DocumentSnapshot snap = t.getResult();
+                        if (snap.exists()) {
+                            systemDuplicateIds.add(checkedIds.get(i));
+                        }
+                    }
+                }
+
+                // Process Email Tasks
+                for (int i = 0; i < emailTasks.size(); i++) {
+                    Task<com.google.firebase.firestore.QuerySnapshot> t = emailTasks.get(i);
+                    if (t.isSuccessful() && t.getResult() != null) {
+                        com.google.firebase.firestore.QuerySnapshot snap = t.getResult();
+                        if (!snap.isEmpty()) {
+                            systemDuplicateEmails.add(checkedEmails.get(i));
+                        }
+                    }
+                }
+
+                if (!systemDuplicateIds.isEmpty() || !systemDuplicateEmails.isEmpty()) {
+                    StringBuilder msg = new StringBuilder("Setup Blocked! The following student credentials are already in use system-wide:\n\n");
+                    if (!systemDuplicateIds.isEmpty()) {
+                        msg.append("Duplicate Student IDs: ").append(TextUtils.join(", ", systemDuplicateIds)).append("\n");
+                    }
+                    if (!systemDuplicateEmails.isEmpty()) {
+                        msg.append("Duplicate Student Emails: ").append(TextUtils.join(", ", systemDuplicateEmails)).append("\n");
+                    }
+                    msg.append("\nPlease edit the student roster list to use unique IDs and Emails.");
+
+                    new androidx.appcompat.app.AlertDialog.Builder(ProgrammeSetupWizardActivity.this)
+                            .setTitle("Duplicate Credentials Detected")
+                            .setMessage(msg.toString())
+                            .setPositiveButton("OK", null)
+                            .show();
+                } else {
+                    // All are unique! Setup module semester spinner and proceed
+                    setupModuleSemesterSpinner();
+                    currentStep++;
+                    updateStepUI();
+                }
+            });
             
         } else if (currentStep == 5) {
             // Step 5 - Complete Setup (Final Execution)
@@ -408,7 +526,7 @@ public class ProgrammeSetupWizardActivity extends AppCompatActivity {
     }
 
     private void addStudentLocally() {
-        String id = etStudentId.getText().toString().trim();
+        String id = etStudentId.getText().toString().trim().toUpperCase();
         String name = etStudentName.getText().toString().trim();
         String email = etStudentEmail.getText().toString().trim();
         String password = etStudentPassword.getText().toString().trim();
@@ -430,6 +548,11 @@ public class ProgrammeSetupWizardActivity extends AppCompatActivity {
             if (existing.studentId.equalsIgnoreCase(id)) {
                 etStudentId.setError("Duplicate Student ID entered locally!");
                 Toast.makeText(this, "Duplicate Student ID in local list!", Toast.LENGTH_SHORT).show();
+                return;
+            }
+            if (existing.email.equalsIgnoreCase(email)) {
+                etStudentEmail.setError("Duplicate Student Email entered locally!");
+                Toast.makeText(this, "Duplicate Student Email in local list!", Toast.LENGTH_SHORT).show();
                 return;
             }
         }
@@ -501,7 +624,21 @@ public class ProgrammeSetupWizardActivity extends AppCompatActivity {
             return;
         }
 
-        TempModule module = new TempModule(semId, code, name, credits);
+        int creditVal;
+        try {
+            creditVal = Integer.parseInt(credits);
+        } catch (NumberFormatException e) {
+            etModuleCredits.setError("Credits must be a valid integer!");
+            etModuleCredits.requestFocus();
+            return;
+        }
+        if (creditVal < 1) {
+            etModuleCredits.setError("Credits must be at least 1!");
+            etModuleCredits.requestFocus();
+            return;
+        }
+
+        TempModule module = new TempModule(semId, code, name, String.valueOf(creditVal));
         localModulesList.add(module);
 
         // Clear inputs
@@ -543,6 +680,10 @@ public class ProgrammeSetupWizardActivity extends AppCompatActivity {
     }
 
     private void completeProgrammeSetup() {
+        if (localModulesList.isEmpty()) {
+            Toast.makeText(this, "At least one module must be configured before saving!", Toast.LENGTH_SHORT).show();
+            return;
+        }
         // Confirm before processing final writes
         new androidx.appcompat.app.AlertDialog.Builder(this)
                 .setTitle("Complete Setup?")
@@ -772,7 +913,7 @@ public class ProgrammeSetupWizardActivity extends AppCompatActivity {
                     }
                     
                     if (tokens.length >= 3) {
-                        String sId = tokens[0].trim();
+                        String sId = tokens[0].trim().toUpperCase();
                         String name = tokens[1].trim();
                         String email = tokens[2].trim();
                         if (sId.isEmpty() || name.isEmpty() || email.isEmpty() || sId.equalsIgnoreCase("Student ID")) {
@@ -789,18 +930,20 @@ public class ProgrammeSetupWizardActivity extends AppCompatActivity {
                             status = tokens[4].trim().toLowerCase();
                         }
                         
-                        // Check local duplicate
+                        // Check local duplicate by ID or Email
                         boolean isDuplicate = false;
                         for (TempStudent ts : localStudentsList) {
-                            if (ts.studentId.equalsIgnoreCase(sId)) {
+                            if (ts.studentId.equalsIgnoreCase(sId) || ts.email.equalsIgnoreCase(email)) {
                                 isDuplicate = true;
                                 break;
                             }
                         }
-                        for (TempStudent ts : parsedStudents) {
-                            if (ts.studentId.equalsIgnoreCase(sId)) {
-                                isDuplicate = true;
-                                break;
+                        if (!isDuplicate) {
+                            for (TempStudent ts : parsedStudents) {
+                                if (ts.studentId.equalsIgnoreCase(sId) || ts.email.equalsIgnoreCase(email)) {
+                                    isDuplicate = true;
+                                    break;
+                                }
                             }
                         }
                         
@@ -871,7 +1014,12 @@ public class ProgrammeSetupWizardActivity extends AppCompatActivity {
                         
                         String credits = "3"; // Default credits
                         if (tokens.length >= 3 && !tokens[2].trim().isEmpty()) {
-                            credits = tokens[2].trim();
+                            try {
+                                int parsedC = Integer.parseInt(tokens[2].trim());
+                                if (parsedC >= 1) {
+                                    credits = String.valueOf(parsedC);
+                                }
+                            } catch (NumberFormatException ignored) {}
                         }
                         
                         String semester = selectedSem;

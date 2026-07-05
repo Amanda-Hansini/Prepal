@@ -89,13 +89,25 @@ public class PerformanceReportActivity extends AppCompatActivity {
     }
 
     private void confirmDeleteSemester(String semesterName) {
-        new AlertDialog.Builder(this)
-                .setTitle("Delete Results?")
-                .setMessage("Are you sure you want to delete all results for " + semesterName + "? This will also remove associated AI predictions.")
-                .setPositiveButton("Delete", (dialog, which) -> deleteSemesterFromFirestore(semesterName))
-                .setNegativeButton("Cancel", null)
-                .setIcon(android.R.drawable.ic_dialog_alert)
-                .show();
+        AlertDialog.Builder builder = new AlertDialog.Builder(this);
+        android.view.View view = getLayoutInflater().inflate(R.layout.dialog_confirm_delete_results, null);
+        builder.setView(view);
+
+        AlertDialog dialog = builder.create();
+        if (dialog.getWindow() != null) {
+            dialog.getWindow().setBackgroundDrawable(new android.graphics.drawable.ColorDrawable(android.graphics.Color.TRANSPARENT));
+        }
+
+        android.widget.TextView tvDeleteMessage = view.findViewById(R.id.tvDeleteMessage);
+        tvDeleteMessage.setText("Are you sure you want to delete all results for " + semesterName + "? This will also remove associated AI predictions.");
+
+        view.findViewById(R.id.btnCancelDelete).setOnClickListener(v -> dialog.dismiss());
+        view.findViewById(R.id.btnConfirmDelete).setOnClickListener(v -> {
+            dialog.dismiss();
+            deleteSemesterFromFirestore(semesterName);
+        });
+
+        dialog.show();
     }
 
     private void deleteSemesterFromFirestore(String semesterName) {

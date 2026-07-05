@@ -41,6 +41,8 @@ public class AdminSettingsActivity extends AppCompatActivity {
         llChangePassword = findViewById(R.id.llChangePassword);
         llHelpFAQ = findViewById(R.id.llHelpFAQ);
         switch2FA = findViewById(R.id.switch2FA);
+        switch2FA.setVisibility(android.view.View.GONE);
+        // Also hide the parent row container of 2FA if there is one, but setting switch to GONE is safe
         switchEmailNotif = findViewById(R.id.switchEmailNotif);
         switchSystemAlerts = findViewById(R.id.switchSystemAlerts);
     }
@@ -84,13 +86,7 @@ public class AdminSettingsActivity extends AppCompatActivity {
     private void setupListeners() {
         ivBack.setOnClickListener(v -> finish());
 
-        switch2FA.setOnCheckedChangeListener((btn, isChecked) -> {
-            prefs.edit().putBoolean("2fa_enabled", isChecked).apply();
-            if (adminId != null && !adminId.isEmpty()) {
-                db.collection("Admins").document(adminId).update("twoFactorEnabled", isChecked);
-                SystemAlertHelper.queueSystemAlert("SECURITY", "2FA Settings Changed", "Admin " + adminId + " set 2FA to " + isChecked);
-            }
-        });
+
 
         switchEmailNotif.setOnCheckedChangeListener((btn, isChecked) -> {
             prefs.edit().putBoolean("email_notif", isChecked).apply();
