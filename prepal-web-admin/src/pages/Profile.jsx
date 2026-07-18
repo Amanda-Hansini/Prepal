@@ -77,6 +77,11 @@ const Profile = ({ currentAdmin, setPage, onLogout }) => {
       return;
     }
 
+    if (!email.trim().endsWith('@saegis.ac.lk')) {
+      showNotification('error', 'Invalid email address.');
+      return;
+    }
+
     setIsLoading(true);
     try {
       const adminDocRef = doc(db, 'Admins', currentAdmin.adminId);

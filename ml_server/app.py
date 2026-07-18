@@ -2,7 +2,7 @@ from flask import Flask, request, jsonify
 import os
 
 from gpa_calculator import calculate_gpa
-from ml_model import predict_future_gpa
+from ml_model import predict_returning_student, predict_new_student
 
 app = Flask(__name__)
 
@@ -12,13 +12,14 @@ def predict():
         # 1. Get JSON data (Now only accepting JSON for manual entry)
         json_data = request.get_json(silent=True) or {}
         student_id = json_data.get('student_id')
+        student_type = json_data.get('student_type', 1) # 1: Returning, 2: New 1st Sem
         
-        print(f"[API] Prediction request for Student: {student_id}")
+        print(f"[API] Prediction request for Student: {student_id}, Type: {student_type}")
         
         if not student_id:
             return jsonify({'error': 'student_id is required'}), 400
 
-        # 2. Extract Questionnaire Inputs (5 Impactful Factors)
+        # 2. Extract Questionnaire Inputs
         try:
             attendance = float(json_data.get('attendance', 0.0))
             study_hours = float(json_data.get('study_hours', 0.0))
@@ -27,24 +28,24 @@ def predict():
         except ValueError:
             return jsonify({'error': 'Questionnaire inputs must be valid numbers'}), 400
 
-        # 3. Process Manual Results
+        # 3. Process Modules and GPA
         extracted_grades = json_data.get('results', [])
         manual_gpa = json_data.get('gpa')
         
         if not extracted_grades:
-            return jsonify({'error': 'No results provided'}), 400
+            return jsonify({'error': 'No modules/results provided'}), 400
         
-        # Calculate/Use GPA
-        if manual_gpa is not None:
-            calc_results = {
-                'current_gpa': float(manual_gpa),
-                'ab_modules': [], 'mc_modules': [], 'ne_modules': []
-            }
-        else:
-            calc_results = calculate_gpa(extracted_grades)
+        sem_gpa = 0.0
+        calc_results = {'ab_modules': [], 'mc_modules': [], 'ne_modules': []}
+        
+        if student_type == 1:
+            # Model A (Returning student) needs previous GPA
+            if manual_gpa is not None:
+                calc_results['current_gpa'] = float(manual_gpa)
+            else:
+                calc_results = calculate_gpa(extracted_grades)
+            sem_gpa = calc_results.get('current_gpa', 0.0)
 
-        sem_gpa = calc_results['current_gpa']
-        
         # 4. Handle 80% Attendance Rule Module-wise
         module_attendances = json_data.get('module_attendances', {})
         failed_modules = []
@@ -65,14 +66,26 @@ def predict():
                     failed_modules.append(mod_name)
                     failed_credits += mod_credits
 
-        # 5. Multiple Linear Regression Prediction (Reduced 5 Factors)
-        predicted_gpa = predict_future_gpa(
-            previous_gpa=sem_gpa, 
-            attendance=attendance,
-            study_hours=study_hours, 
-            sleep_hours=sleep_hours, 
-            stress_level=stress_level
-        )
+        # 5. Multiple Linear Regression Prediction
+        if student_type == 2:
+            ol_maths = json_data.get('ol_maths', 'F')
+            ol_english = json_data.get('ol_english', 'F')
+            predicted_gpa = predict_new_student(
+                ol_maths=ol_maths,
+                ol_english=ol_english,
+                attendance=attendance,
+                study_hours=study_hours,
+                sleep_hours=sleep_hours,
+                stress_level=stress_level
+            )
+        else:
+            predicted_gpa = predict_returning_student(
+                previous_gpa=sem_gpa, 
+                attendance=attendance,
+                study_hours=study_hours, 
+                sleep_hours=sleep_hours, 
+                stress_level=stress_level
+            )
 
         # 6. Apply Mathematical Penalty for failed modules
         if total_credits > 0 and failed_credits > 0:
@@ -95,9 +108,9 @@ def predict():
             'semester_gpa': sem_gpa,
             'predicted_future_gpa': predicted_gpa,
             'motivation_tip': tip,
-            'ab_modules': calc_results['ab_modules'],
-            'mc_modules': calc_results['mc_modules'],
-            'ne_modules': calc_results['ne_modules'],
+            'ab_modules': calc_results.get('ab_modules', []),
+            'mc_modules': calc_results.get('mc_modules', []),
+            'ne_modules': calc_results.get('ne_modules', []),
             'eligible': eligible
         }), 200
 

@@ -17,6 +17,8 @@ const SemesterManager = ({ setPage }) => {
   // Filters
   const [degreeFilter, setDegreeFilter] = useState('All');
   const [uniqueDegrees, setUniqueDegrees] = useState([]);
+  const [batchFilter, setBatchFilter] = useState('All');
+  const [uniqueBatches, setUniqueBatches] = useState([]);
 
   // Editing state
   const [editingSemId, setEditingSemId] = useState(null);
@@ -45,6 +47,9 @@ const SemesterManager = ({ setPage }) => {
       // Extract unique degree IDs for filtering
       const degs = Array.from(new Set(fetched.map(s => s.degreeId).filter(Boolean)));
       setUniqueDegrees(degs);
+
+      const batches = Array.from(new Set(fetched.map(s => s.batchId).filter(Boolean)));
+      setUniqueBatches(batches);
     } catch (error) {
       console.error("Error fetching semesters:", error);
     } finally {
@@ -120,7 +125,8 @@ const SemesterManager = ({ setPage }) => {
                           (s.academicYear || '').toLowerCase().includes(searchQuery.toLowerCase()) ||
                           (s.semesterNo || '').toLowerCase().includes(searchQuery.toLowerCase());
     const matchesDegree = degreeFilter === 'All' || s.degreeId === degreeFilter;
-    return matchesSearch && matchesDegree;
+    const matchesBatch = batchFilter === 'All' || s.batchId === batchFilter;
+    return matchesSearch && matchesDegree && matchesBatch;
   });
 
   const itemsPerPage = 8;
@@ -172,6 +178,17 @@ const SemesterManager = ({ setPage }) => {
                 <option value="All">All Programmes</option>
                 {uniqueDegrees.map(deg => <option key={deg} value={deg}>{deg}</option>)}
               </select>
+
+              <label style={{ fontSize: '0.85rem', fontWeight: '700', color: 'var(--text-main)', marginLeft: '16px' }}>Batch:</label>
+              <select 
+                className="form-input" 
+                style={{ padding: '8px 12px', minWidth: '150px' }}
+                value={batchFilter}
+                onChange={e => { setBatchFilter(e.target.value); setCurrentPage(1); }}
+              >
+                <option value="All">All Batches</option>
+                {uniqueBatches.map(batch => <option key={batch} value={batch}>{batch}</option>)}
+              </select>
             </div>
           </div>
 
@@ -179,7 +196,8 @@ const SemesterManager = ({ setPage }) => {
             <thead>
               <tr>
                 <th>Degree Programme</th>
-                <th>Semester ID</th>
+                  <th>Batch</th>
+                  <th>Semester ID</th>
                 <th>Academic Year</th>
                 <th>Semester Name</th>
                 <th>Start Date</th>
@@ -206,6 +224,9 @@ const SemesterManager = ({ setPage }) => {
                     <>
                       <td>
                         <input type="text" className="form-input" style={{padding: '4px', fontSize: '0.9rem', backgroundColor: '#f1f5f9'}} value={editingSemData.degreeId || ''} disabled />
+                      </td>
+                      <td>
+                        <input type="text" className="form-input" style={{padding: '4px', fontSize: '0.9rem', backgroundColor: '#f1f5f9'}} value={editingSemData.batchId || ''} disabled />
                       </td>
                       <td className="id-cell">{sem.semesterId}</td>
                       <td>
@@ -234,6 +255,7 @@ const SemesterManager = ({ setPage }) => {
                           <GraduationCap size={12} style={{ marginRight: '4px', display: 'inline' }} /> {sem.degreeId}
                         </span>
                       </td>
+                      <td style={{ fontWeight: 600 }}>{sem.batchId || 'N/A'}</td>
                       <td className="id-cell">{sem.semesterId}</td>
                       <td>{sem.academicYear}</td>
                       <td>

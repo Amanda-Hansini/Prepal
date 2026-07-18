@@ -61,6 +61,8 @@ const ProgrammeManager = ({ setPage, initialTab = 'batches', initialView = 'list
   const [manualStudent, setManualStudent] = useState({ studentId: '', fullName: '', email: '', password: 'password123', status: 'active' });
 
   const [isAddBatchModalOpen, setIsAddBatchModalOpen] = useState(false);
+  const [isGenerateSemestersModalOpen, setIsGenerateSemestersModalOpen] = useState(false);
+  const [generateSemTargetBatchId, setGenerateSemTargetBatchId] = useState('');
   const [addBatchWizardStep, setAddBatchWizardStep] = useState(1);
   const [addBatchData, setAddBatchData] = useState({ batchId: '', batchName: '', intakeYear: '' });
   const [isAutoGeneratingSemesters, setIsAutoGeneratingSemesters] = useState(true);
@@ -76,8 +78,11 @@ const ProgrammeManager = ({ setPage, initialTab = 'batches', initialView = 'list
   const [hubModules, setHubModules] = useState([]);
   const [hubLoading, setHubLoading] = useState(false);
 
-  const [hubFilterBatch, setHubFilterBatch] = useState('All');
   const [hubFilterSemester, setHubFilterSemester] = useState('All');
+  
+  // Batch Details States
+  const [selectedBatch, setSelectedBatch] = useState(null);
+  const [batchActiveTab, setBatchActiveTab] = useState('semesters');
 
   const generateSemesters = (durationStr) => {
     const years = parseInt(durationStr?.charAt(0)) || 3;
@@ -129,7 +134,6 @@ const ProgrammeManager = ({ setPage, initialTab = 'batches', initialView = 'list
           docId: doc.id, // Track actual Firestore document ID
           id: progId,
           name: data.name || 'Unnamed',
-          duration: data.duration || 'N/A',
           batches: batchCounts[progId] || 0,
           status: data.status || 'Active'
         });
@@ -161,8 +165,27 @@ const ProgrammeManager = ({ setPage, initialTab = 'batches', initialView = 'list
     setHubFilterSemester('All');
   };
 
+  const handleAddNewModule = () => {
+    const newDocId = `new_mod_${Date.now()}`;
+    const newDocPath = `Degrees/${selectedProgramme.id}/Modules/${newDocId}`;
+    const newModule = {
+      docId: newDocId,
+      docPath: newDocPath,
+      batchId: selectedBatch?.batchId || '',
+      semesterId: '',
+      moduleCode: '',
+      moduleName: '',
+      credits: 3,
+      degreeId: selectedProgramme.id
+    };
+    setHubModules([newModule, ...hubModules]);
+    setEditingHubItemId(newDocPath);
+    setEditingHubItemType('modules');
+    setEditingHubItemData(newModule);
+  };
+
   const fetchHubData = async () => {
-    if (!selectedProgramme || view !== 'details') return;
+    if (!selectedProgramme || (view !== 'details' && view !== 'batch-details')) return;
     setHubLoading(true);
     const normalize = (str) => String(str || '').replace(/[^a-z0-9]/gi, '').toLowerCase();
     const pIdNormalized = normalize(selectedProgramme.id);
@@ -175,33 +198,17 @@ const ProgrammeManager = ({ setPage, initialTab = 'batches', initialView = 'list
       const batches = batchesSnap.docs.map(doc => ({ docId: doc.id, docPath: doc.ref.path, ...doc.data() }));
       setHubBatches(batches);
 
-      // 2. Fetch Semesters (Check both new 'Semesters' and legacy 'Semester IDs')
+      // 2. Fetch Semesters (Only new 'Semesters' structure to prevent index errors)
       const directSemSnap = await getDocs(collection(db, 'Degrees', selectedProgramme.id, 'Semesters'));
       const directSems = directSemSnap.docs.map(doc => ({ docId: doc.id, docPath: doc.ref.path, ...doc.data() }));
 
-      const legacySemSnap = await getDocs(collectionGroup(db, 'Semester IDs'));
-      const legacySems = legacySemSnap.docs
-        .map(doc => ({ docId: doc.id, docPath: doc.ref.path, ...doc.data() }))
-        .filter(s => {
-          const sDeg = normalize(s.degreeId);
-          return sDeg === pIdNormalized || sDeg === pNameNormalized;
-        });
+      setHubSemesters(directSems);
 
-      setHubSemesters([...directSems, ...legacySems]);
-
-      // 3. Fetch Modules (Check both new 'Modules' and legacy 'Module IDs')
+      // 3. Fetch Modules (Only new 'Modules' structure to prevent index errors)
       const directModSnap = await getDocs(collection(db, 'Degrees', selectedProgramme.id, 'Modules'));
       const directMods = directModSnap.docs.map(doc => ({ docId: doc.id, docPath: doc.ref.path, ...doc.data() }));
 
-      const legacyModSnap = await getDocs(collectionGroup(db, 'Module IDs'));
-      const legacyMods = legacyModSnap.docs
-        .map(doc => ({ docId: doc.id, docPath: doc.ref.path, ...doc.data() }))
-        .filter(m => {
-          const mDeg = normalize(m.degreeId);
-          return mDeg === pIdNormalized || mDeg === pNameNormalized;
-        });
-
-      setHubModules([...directMods, ...legacyMods]);
+      setHubModules(directMods);
     } catch (error) {
       console.error("Error fetching hub data:", error);
     } finally {
@@ -663,7 +670,7 @@ const ProgrammeManager = ({ setPage, initialTab = 'batches', initialView = 'list
     if (!file) return;
 
     const reader = new FileReader();
-    reader.onload = (evt) => {
+    reader.onload = async (evt) => {
       try {
         const bstr = evt.target.result;
         const wb = XLSX.read(bstr, { type: 'binary' });
@@ -792,6 +799,17 @@ const ProgrammeManager = ({ setPage, initialTab = 'batches', initialView = 'list
               </div>
             ), { duration: Infinity });
           } else {
+            const newIds = parsedStudents.map(s => s.studentId);
+            const uniqueIdsInFile = new Set(newIds);
+            if (uniqueIdsInFile.size !== newIds.length) {
+              toast.error("Duplicate IDs found within the uploaded file itself!");
+              return;
+            }
+            const existingIds = await checkStudentIdsUnique(newIds);
+            if (existingIds.length > 0) {
+              toast.error(`Duplicate IDs detected in database: ${existingIds.join(', ')}.`);
+              return;
+            }
             setStudentList(parsedStudents);
             toast.success(`Successfully parsed ${parsedStudents.length} students.`);
           }
@@ -808,7 +826,7 @@ const ProgrammeManager = ({ setPage, initialTab = 'batches', initialView = 'list
   };
 
   const handleUpdateProgramme = async () => {
-    if(!editingProg.id || !editingProg.name || !editingProg.duration) {
+    if(!editingProg.id || !editingProg.name) {
       toast.error("Please fill all fields")
       return;
     }
@@ -819,7 +837,6 @@ const ProgrammeManager = ({ setPage, initialTab = 'batches', initialView = 'list
       await setDoc(doc(db, 'Degrees', targetDocId), {
         id: editingProg.id,
         name: editingProg.name,
-        duration: editingProg.duration,
         status: editingProg.status || 'Active'
       }, { merge: true });
       
@@ -828,7 +845,7 @@ const ProgrammeManager = ({ setPage, initialTab = 'batches', initialView = 'list
       // Update local state manually to ensure the table reflects changes even if cache is slightly behind
       setProgrammes(prev => prev.map(p => 
         (p.docId === targetDocId || p.id === targetDocId) 
-        ? { ...p, name: editingProg.name, duration: editingProg.duration } 
+        ? { ...p, name: editingProg.name } 
         : p
       ));
 
@@ -1162,10 +1179,9 @@ const ProgrammeManager = ({ setPage, initialTab = 'batches', initialView = 'list
         <table className="modern-table">
           <thead>
             <tr>
-              <th>Programme ID</th>
-              <th>Programme Name</th>
-              <th>Duration</th>
-              <th>Total Batches</th>
+              <th>ID</th>
+              <th>Name</th>
+              <th>Batches</th>
               <th>Status</th>
               <th>Actions</th>
             </tr>
@@ -1190,11 +1206,16 @@ const ProgrammeManager = ({ setPage, initialTab = 'batches', initialView = 'list
                 animate={{ opacity: 1, x: 0 }}
                 transition={{ delay: i * 0.05 }}
               >
-                <td className="id-cell">{prog.id}</td>
-                <td className="name-cell">{prog.name}</td>
-                <td>{prog.duration}</td>
                 <td>
-                  <span className="count-badge">{prog.batches} Batches</span>
+                  <div style={{ fontSize: '0.9rem', color: 'var(--text-main)', fontWeight: '500' }}>{prog.id}</div>
+                </td>
+                <td>
+                  <div style={{ fontWeight: '600', color: 'var(--text-main)' }}>{prog.name}</div>
+                </td>
+                <td>
+                  <span style={{ background: 'var(--bg-light)', padding: '4px 10px', borderRadius: '20px', fontSize: '0.85rem', fontWeight: '600' }}>
+                    {prog.batches} Batches
+                  </span>
                 </td>
                 <td>
                   <span className={`status-pill ${prog.status.toLowerCase()}`}>
@@ -1299,8 +1320,7 @@ const ProgrammeManager = ({ setPage, initialTab = 'batches', initialView = 'list
 
         {wizardStep === 2 && (
           <div className="step-content">
-            <h3>Step 2: Add Initial Batches</h3>
-            <p className="text-muted mb-4">You can add the first batch for this programme now. More can be added later from the Details Hub.</p>
+            <h3>Step 2: Add Initial Batch</h3>
             <div className="form-group">
               <label>Batch Name / Intake</label>
               <input type="text" placeholder="e.g. 2026 Intake" className="form-input" value={newBatchName} onChange={e => setNewBatchName(e.target.value)} />
@@ -1404,11 +1424,16 @@ const ProgrammeManager = ({ setPage, initialTab = 'batches', initialView = 'list
                 <button 
                   className="btn-primary" 
                   style={{ gridColumn: 'span 5' }} 
-                  onClick={() => {
+                  onClick={async () => {
                     if (manualStudent.studentId && manualStudent.fullName && manualStudent.email) {
                       // Check duplicate locally
                       if (studentList.some(s => s.studentId === manualStudent.studentId)) {
                         toast.error("Duplicate Student ID detected locally!")
+                        return;
+                      }
+                      const existingIds = await checkStudentIdsUnique([manualStudent.studentId]);
+                      if (existingIds.length > 0) {
+                        toast.error(`Student ID ${manualStudent.studentId} already exists in the system!`);
                         return;
                       }
                       setStudentList([...studentList, {
@@ -1567,39 +1592,14 @@ const ProgrammeManager = ({ setPage, initialTab = 'batches', initialView = 'list
               <h1>{selectedProgramme?.name}</h1>
               <span className="hub-id-badge">{selectedProgramme?.id}</span>
             </div>
-            {activeTab === 'batches' && (
-              <button className="btn-primary" onClick={() => setIsAddBatchModalOpen(true)}>
+            <button className="btn-primary" onClick={() => setIsAddBatchModalOpen(true)}>
                 <Plus size={18} /> Add Batch
               </button>
-            )}
-            {activeTab === 'semesters' && (
-              <button className="btn-primary" onClick={() => toast.error("Please add semesters by creating a new batch or using the edit options.")}>
-                <Plus size={18} /> Add Semester
-              </button>
-            )}
-             {activeTab === 'modules' && (
-              <button className="btn-primary" onClick={() => toast.error("Please add modules via the edit icon in the modules table.")}>
-                <Plus size={18} /> Add Module
-              </button>
-            )}
+            
+             
           </div>
 
-          <div className="hub-tabs">
-            {[
-              { id: 'batches', label: 'Batches', icon: Users },
-              { id: 'semesters', label: 'Semesters', icon: Calendar },
-              { id: 'modules', label: 'Modules', icon: Box },
-            ].map(tab => (
-              <button 
-                key={tab.id}
-                className={`hub-tab ${activeTab === tab.id ? 'active' : ''}`}
-                onClick={() => setActiveTab(tab.id)}
-              >
-                <tab.icon size={18} /> {tab.label}
-              </button>
-            ))}
           </div>
-        </div>
 
         <div className="hub-content glass-panel">
           {hubLoading ? (
@@ -1609,42 +1609,8 @@ const ProgrammeManager = ({ setPage, initialTab = 'batches', initialView = 'list
             </div>
           ) : (
             <div className="hub-table-wrapper">
-              {/* Filter Controls for Semesters and Modules */}
-              {activeTab === 'semesters' && hubBatches.length > 0 && (
-                <div className="hub-filter-row">
-                  <label>Filter by Batch:</label>
-                  <select className="filter-select" value={hubFilterBatch} onChange={e => setHubFilterBatch(e.target.value)}>
-                    <option value="All">All Batches</option>
-                    {hubBatches.map(b => <option key={b.batchId} value={b.batchId}>{b.batchName} ({b.batchId})</option>)}
-                  </select>
-                </div>
-              )}
-
-              {activeTab === 'modules' && (
-                <div className="hub-filter-row">
-                  <div className="filter-item">
-                    <label>Batch:</label>
-                    <select className="filter-select" value={hubFilterBatch} onChange={e => setHubFilterBatch(e.target.value)}>
-                      <option value="All">All Batches</option>
-                      {hubBatches.map(b => <option key={b.batchId} value={b.batchId}>{b.batchName} ({b.batchId})</option>)}
-                    </select>
-                  </div>
-                  <div className="filter-item">
-                    <label>Semester:</label>
-                    <select className="filter-select" value={hubFilterSemester} onChange={e => setHubFilterSemester(e.target.value)}>
-                      <option value="All">All Semesters</option>
-                      {/* Unique semesters across filtered batches or all */}
-                      {[...new Set(hubSemesters.filter(s => hubFilterBatch === 'All' || s.batchId === hubFilterBatch).map(s => s.semesterId))].map(sId => (
-                        <option key={sId} value={sId}>{sId}</option>
-                      ))}
-                    </select>
-                  </div>
-                </div>
-              )}
-
               <table className="modern-table">
-                {activeTab === 'batches' && (
-                  <>
+                
                     <thead>
                       <tr>
                         <th>Batch ID</th>
@@ -1683,6 +1649,7 @@ const ProgrammeManager = ({ setPage, initialTab = 'batches', initialView = 'list
                               <td>{batch.intakeYear}</td>
                               <td>
                                 <div style={{ display: 'flex', gap: '8px' }}>
+                                  <button className="icon-action-btn" style={{ color: 'var(--accent)' }} onClick={() => { setSelectedBatch(batch); setView('batch-details'); }} title="Batch Settings"><Settings size={16} /></button>
                                   <button className="icon-action-btn edit" onClick={() => handleEditHubItem('batches', batch)} title="Edit"><Edit2 size={16} /></button>
                                   <button className="icon-action-btn delete" onClick={() => handleDeleteHubItem('batches', batch)} title="Delete"><Trash2 size={16} /></button>
                                   <button className="icon-action-btn" style={{ color: 'var(--accent)' }} onClick={() => handleOpenEnrollment(batch)} title="Manage Students"><Users size={16} /></button>
@@ -1693,30 +1660,84 @@ const ProgrammeManager = ({ setPage, initialTab = 'batches', initialView = 'list
                         </tr>
                       ))}
                     </tbody>
-                  </>
-                )}
+              </table>
+            </div>
+          )}
+        </div>
+      </motion.div>
+    );
+  };
 
-                {activeTab === 'semesters' && (
+  
+  const renderBatchDetails = () => {
+    return (
+      <motion.div 
+        initial={{ opacity: 0, x: 20 }}
+        animate={{ opacity: 1, x: 0 }}
+        className="view-container"
+      >
+        <div className="hub-header glass-panel">
+          <button className="btn-back" onClick={() => setView('details')}>
+            <ArrowLeft size={18} /> Back to Batches
+          </button>
+          <div className="hub-title-row">
+            <div>
+              <h1>{selectedBatch?.batchName}</h1>
+              <span className="hub-id-badge">{selectedBatch?.batchId}</span>
+            </div>
+             {batchActiveTab === 'modules' && (
+              <button className="btn-primary" onClick={handleAddNewModule}>
+                <Plus size={18} /> Add Module
+              </button>
+            )}
+          </div>
+
+          <div className="hub-tabs">
+            {[
+              { id: 'semesters', label: 'Semesters', icon: Calendar },
+              { id: 'modules', label: 'Modules', icon: Box },
+            ].map(tab => (
+              <button 
+                key={tab.id}
+                className={`hub-tab ${batchActiveTab === tab.id ? 'active' : ''}`}
+                onClick={() => setBatchActiveTab(tab.id)}
+              >
+                <tab.icon size={18} /> {tab.label}
+              </button>
+            ))}
+          </div>
+        </div>
+
+        <div className="hub-content glass-panel">
+          {hubLoading ? (
+            <div className="loading-state">
+              <div className="loader" />
+              <p>Fetching {batchActiveTab}...</p>
+            </div>
+          ) : (
+            <div className="hub-table-wrapper">
+              <table className="modern-table">
+                {batchActiveTab === 'semesters' && (
                   <>
                     <thead>
                       <tr>
                         <th>Batch</th>
                         <th>Semester ID</th>
-                        <th>Year</th>
-                        <th>Sem No</th>
+                        <th>Academic Year</th>
+                        <th>Semester Name</th>
+                        <th>Start Date</th>
+                        <th>End Date</th>
                         <th>Actions</th>
                       </tr>
                     </thead>
                     <tbody>
                       {hubSemesters.filter(s => {
-                        const bMatch = hubFilterBatch === 'All' || 
-                          String(s.batchId || '').trim().toLowerCase() === hubFilterBatch.trim().toLowerCase();
+                        const bMatch = !s.batchId || String(s.batchId || '').trim().toLowerCase() === String(selectedBatch?.batchId || '').trim().toLowerCase() || String(s.batchId || '').trim().toLowerCase() === String(selectedBatch?.batchName || '').trim().toLowerCase();
                         return bMatch;
                       }).length === 0 ? (
-                        <tr><td colSpan="5" className="text-center">No semesters match this filter.</td></tr>
+                        <tr><td colSpan="7" className="text-center">No semesters match this filter. (Total loaded in hubSemesters: {hubSemesters.length}, for degree: {selectedProgramme?.id}, batchId: {selectedBatch?.batchId}, batchName: {selectedBatch?.batchName})</td></tr>
                       ) : hubSemesters.filter(s => {
-                        const bMatch = hubFilterBatch === 'All' || 
-                          String(s.batchId || '').trim().toLowerCase() === hubFilterBatch.trim().toLowerCase();
+                        const bMatch = !s.batchId || String(s.batchId || '').trim().toLowerCase() === String(selectedBatch?.batchId || '').trim().toLowerCase() || String(s.batchId || '').trim().toLowerCase() === String(selectedBatch?.batchName || '').trim().toLowerCase();
                         return bMatch;
                       }).map(sem => (
                         <tr key={sem.docId}>
@@ -1735,6 +1756,12 @@ const ProgrammeManager = ({ setPage, initialTab = 'batches', initialView = 'list
                                 <input type="text" className="form-input" style={{padding: '4px', fontSize: '0.9rem', width: '60px'}} value={editingHubItemData.semesterNo || ''} onChange={e => setEditingHubItemData({...editingHubItemData, semesterNo: e.target.value})} />
                               </td>
                               <td>
+                                <input type="date" className="form-input" style={{padding: '4px', fontSize: '0.9rem', width: '130px'}} value={editingHubItemData.startDate || ''} onChange={e => setEditingHubItemData({...editingHubItemData, startDate: e.target.value})} />
+                              </td>
+                              <td>
+                                <input type="date" className="form-input" style={{padding: '4px', fontSize: '0.9rem', width: '130px'}} value={editingHubItemData.endDate || ''} onChange={e => setEditingHubItemData({...editingHubItemData, endDate: e.target.value})} />
+                              </td>
+                              <td>
                                 <div style={{ display: 'flex', gap: '8px' }}>
                                   <button className="icon-action-btn edit" onClick={handleSaveHubItem} title="Save"><Check size={16} /></button>
                                   <button className="icon-action-btn delete" onClick={cancelEditHubItem} title="Cancel"><X size={16} /></button>
@@ -1743,10 +1770,16 @@ const ProgrammeManager = ({ setPage, initialTab = 'batches', initialView = 'list
                             </>
                           ) : (
                             <>
-                              <td className="id-cell">{sem.batchId}</td>
-                              <td>{sem.semesterId}</td>
+                              <td style={{ fontWeight: 600 }}>{sem.batchId || 'N/A'}</td>
+                              <td className="id-cell">{sem.semesterId}</td>
                               <td>{sem.academicYear}</td>
-                              <td>{sem.semesterNo}</td>
+                              <td>
+                                <span className="count-badge" style={{ backgroundColor: 'rgba(5, 123, 254, 0.1)', color: 'var(--accent)' }}>
+                                  <Calendar size={12} style={{ marginRight: '4px', display: 'inline' }} /> {sem.semesterNo}
+                                </span>
+                              </td>
+                              <td>{sem.startDate ? (sem.startDate.includes('-') ? sem.startDate : new Date(sem.startDate).toLocaleDateString()) : 'Not Set'}</td>
+                              <td>{sem.endDate ? (sem.endDate.includes('-') ? sem.endDate : new Date(sem.endDate).toLocaleDateString()) : 'Not Set'}</td>
                               <td>
                                 <div style={{ display: 'flex', gap: '8px' }}>
                                   <button className="icon-action-btn edit" onClick={() => handleEditHubItem('semesters', sem)} title="Edit"><Edit2 size={16} /></button>
@@ -1761,90 +1794,55 @@ const ProgrammeManager = ({ setPage, initialTab = 'batches', initialView = 'list
                   </>
                 )}
 
-                {activeTab === 'modules' && (
+                {batchActiveTab === 'modules' && (
                   <>
                     <thead>
                       <tr>
-                        <th>Batch / Sem</th>
+                        <th>Batch</th>
                         <th>Module Code</th>
                         <th>Module Name</th>
+                        <th>Semester</th>
                         <th>Credits</th>
                         <th>Actions</th>
                       </tr>
                     </thead>
                     <tbody>
                       {hubModules.filter(m => {
-                        const selectedBatchObj = hubBatches.find(b => b.batchId === hubFilterBatch);
-                        const selectedSemObj = hubSemesters.find(s => s.semesterId === hubFilterSemester);
-
                         const normalize = (str) => String(str || '').replace(/[^a-z0-9]/gi, '').toLowerCase();
-
                         const mBatch = normalize(m.batchId);
-                        const bMatch = hubFilterBatch === 'All' || 
-                          mBatch === normalize(hubFilterBatch) ||
-                          (selectedBatchObj && mBatch === normalize(selectedBatchObj.batchName));
-                        
-                        const mSem = normalize(m.semesterId);
-                        const sMatch = hubFilterSemester === 'All' || 
-                          mSem === normalize(hubFilterSemester) ||
-                          (selectedSemObj && (
-                            mSem === normalize(selectedSemObj.semesterNo) ||
-                            mSem === normalize(selectedSemObj.name) ||
-                            mSem === normalize(`${selectedSemObj.academicYear}${selectedSemObj.semesterNo}`)
-                          ));
-                        
-                        return bMatch && sMatch;
+                        const targetBatch = normalize(selectedBatch?.batchId);
+                        const targetBatchName = normalize(selectedBatch?.batchName);
+                        return !m.batchId || mBatch === targetBatch || mBatch === targetBatchName;
                       }).length === 0 ? (
                         <tr>
-                          <td colSpan="5" className="text-center">
-                            No modules match this filter.
-                            {hubModules.length > 0 && (
-                              <div style={{ fontSize: '0.75rem', color: 'var(--accent)', marginTop: '8px', opacity: 0.8 }}>
-                                Found {hubModules.length} total modules for this degree. 
-                                <br/>Example raw data: Batch="{hubModules[0].batchId}", Semester="{hubModules[0].semesterId}"
-                              </div>
-                            )}
+                          <td colSpan="6" className="text-center">
+                            No modules match this filter. (Total loaded: {hubModules.length}, for degree: {selectedProgramme?.id}, batchId: {selectedBatch?.batchId}, batchName: {selectedBatch?.batchName})
                           </td>
                         </tr>
                       ) : hubModules.filter(m => {
-                        const selectedBatchObj = hubBatches.find(b => b.batchId === hubFilterBatch);
-                        const selectedSemObj = hubSemesters.find(s => s.semesterId === hubFilterSemester);
-
                         const normalize = (str) => String(str || '').replace(/[^a-z0-9]/gi, '').toLowerCase();
-
                         const mBatch = normalize(m.batchId);
-                        const bMatch = hubFilterBatch === 'All' || 
-                          mBatch === normalize(hubFilterBatch) ||
-                          (selectedBatchObj && mBatch === normalize(selectedBatchObj.batchName));
-                        
-                        const mSem = normalize(m.semesterId);
-                        const sMatch = hubFilterSemester === 'All' || 
-                          mSem === normalize(hubFilterSemester) ||
-                          (selectedSemObj && (
-                            mSem === normalize(selectedSemObj.semesterNo) ||
-                            mSem === normalize(selectedSemObj.name) ||
-                            mSem === normalize(`${selectedSemObj.academicYear}${selectedSemObj.semesterNo}`)
-                          ));
-                        
-                        return bMatch && sMatch;
+                        const targetBatch = normalize(selectedBatch?.batchId);
+                        const targetBatchName = normalize(selectedBatch?.batchName);
+                        return !m.batchId || mBatch === targetBatch || mBatch === targetBatchName;
                       }).map(mod => (
                         <tr key={mod.docId}>
                           {editingHubItemId === mod.docPath ? (
                             <>
-                              <td className="id-cell" style={{ fontSize: '0.8rem' }}>
-                                <div style={{display:'flex', flexDirection:'column', gap:'4px'}}>
-                                  <input type="text" placeholder="Batch ID" className="form-input" style={{padding: '2px', fontSize: '0.8rem'}} value={editingHubItemData.batchId || ''} onChange={e => setEditingHubItemData({...editingHubItemData, batchId: e.target.value})} />
-                                  <input type="text" placeholder="Semester ID" className="form-input" style={{padding: '2px', fontSize: '0.8rem'}} value={editingHubItemData.semesterId || ''} onChange={e => setEditingHubItemData({...editingHubItemData, semesterId: e.target.value})} />
-                                </div>
+                              <td>
+                                <input type="text" className="form-input" style={{padding: '4px', fontSize: '0.9rem', backgroundColor: '#f1f5f9'}} value={editingHubItemData.batchId || ''} disabled />
                               </td>
                               <td className="id-cell">
-                                <input type="text" className="form-input" style={{padding: '4px', fontSize: '0.9rem', width: '80px'}} value={editingHubItemData.moduleId || ''} onChange={e => setEditingHubItemData({...editingHubItemData, moduleId: e.target.value})} />
+                                <input type="text" className="form-input" style={{padding: '4px', fontSize: '0.9rem'}} value={editingHubItemData.moduleCode || ''} onChange={e => setEditingHubItemData({...editingHubItemData, moduleCode: e.target.value})} placeholder="Code" />
                               </td>
                               <td>
-                                <input type="text" className="form-input" style={{padding: '4px', fontSize: '0.9rem'}} value={editingHubItemData.moduleName || ''} onChange={e => setEditingHubItemData({...editingHubItemData, moduleName: e.target.value})} />
+                                <input type="text" className="form-input" style={{padding: '4px', fontSize: '0.9rem'}} value={editingHubItemData.moduleName || ''} onChange={e => setEditingHubItemData({...editingHubItemData, moduleName: e.target.value})} placeholder="Name" />
                               </td>
                               <td>
-                                <input type="number" className="form-input" style={{padding: '4px', fontSize: '0.9rem', width: '60px'}} value={editingHubItemData.credits || ''} onChange={e => setEditingHubItemData({...editingHubItemData, credits: e.target.value})} />
+                                <input type="text" className="form-input" style={{padding: '4px', fontSize: '0.9rem', width: '80px'}} value={editingHubItemData.semesterId || ''} onChange={e => setEditingHubItemData({...editingHubItemData, semesterId: e.target.value})} placeholder="Sem ID" />
+                              </td>
+                              <td>
+                                <input type="number" className="form-input" style={{padding: '4px', fontSize: '0.9rem', width: '70px'}} value={editingHubItemData.credits || ''} onChange={e => setEditingHubItemData({...editingHubItemData, credits: e.target.value})} />
                               </td>
                               <td>
                                 <div style={{ display: 'flex', gap: '8px' }}>
@@ -1855,10 +1853,15 @@ const ProgrammeManager = ({ setPage, initialTab = 'batches', initialView = 'list
                             </>
                           ) : (
                             <>
-                              <td className="id-cell" style={{ fontSize: '0.8rem' }}>{mod.batchId} / {mod.semesterId}</td>
-                              <td className="id-cell">{mod.moduleId}</td>
+                              <td style={{ fontWeight: 600 }}>{mod.batchId || 'N/A'}</td>
+                              <td className="id-cell">{mod.moduleCode}</td>
                               <td>{mod.moduleName}</td>
-                              <td>{mod.credits}</td>
+                              <td>
+                                <span className="count-badge" style={{ backgroundColor: 'rgba(5, 123, 254, 0.1)', color: 'var(--accent)' }}>
+                                  {mod.semesterId}
+                                </span>
+                              </td>
+                              <td><strong>{mod.credits}</strong> credits</td>
                               <td>
                                 <div style={{ display: 'flex', gap: '8px' }}>
                                   <button className="icon-action-btn edit" onClick={() => handleEditHubItem('modules', mod)} title="Edit"><Edit2 size={16} /></button>
@@ -1879,6 +1882,7 @@ const ProgrammeManager = ({ setPage, initialTab = 'batches', initialView = 'list
       </motion.div>
     );
   };
+
 
   const renderEditView = () => (
     <motion.div 
@@ -1906,14 +1910,6 @@ const ProgrammeManager = ({ setPage, initialTab = 'batches', initialView = 'list
             <input type="text" className="form-input" value={editingProg?.name || ''} onChange={e => setEditingProg({...editingProg, name: e.target.value})} />
           </div>
           <div className="form-group">
-            <label>Duration (Years)</label>
-            <select className="form-input" value={editingProg?.duration || '3 Years'} onChange={e => setEditingProg({...editingProg, duration: e.target.value})}>
-              <option value="N/A" disabled>Select Duration</option>
-              <option value="3 Years">3 Years</option>
-              <option value="4 Years">4 Years</option>
-            </select>
-          </div>
-          <div className="form-group">
             <label>Status</label>
             <select className="form-input" value={editingProg?.status || 'Active'} onChange={e => setEditingProg({...editingProg, status: e.target.value})}>
               <option value="Active">Active</option>
@@ -1938,11 +1934,84 @@ const ProgrammeManager = ({ setPage, initialTab = 'batches', initialView = 'list
         {...confirmConfig} 
         onCancel={() => setConfirmConfig(prev => ({ ...prev, isOpen: false }))} 
       />
+
+      {isGenerateSemestersModalOpen && (
+        <div className="modal-overlay" style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.5)', zIndex: 1000, padding: '20px' }}>
+          <motion.div 
+            initial={{ opacity: 0, scale: 0.95 }} 
+            animate={{ opacity: 1, scale: 1 }} 
+            className="modal-content glass-panel"
+            style={{ maxWidth: '500px', width: '100%', padding: '32px' }}
+          >
+            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '24px' }}>
+              <h2 style={{ fontSize: '1.25rem', fontWeight: '700' }}>Generate Semesters</h2>
+              <button className="icon-action-btn" onClick={() => setIsGenerateSemestersModalOpen(false)}><X size={24} /></button>
+            </div>
+            
+            <p className="text-muted mb-4">Select a batch to auto-generate semesters for it based on the programme duration ({selectedProgramme?.duration}). This will allow you to specify start and end dates.</p>
+            
+            <div className="form-group mb-4">
+              <label>Select Batch</label>
+              <select className="form-input" value={generateSemTargetBatchId} onChange={e => setGenerateSemTargetBatchId(e.target.value)}>
+                <option value="" disabled>Choose a batch...</option>
+                {hubBatches.map(b => <option key={b.batchId} value={b.batchId}>{b.batchName} ({b.batchId})</option>)}
+              </select>
+            </div>
+
+            <div style={{ display: 'flex', justifyContent: 'flex-end', gap: '12px', marginTop: '24px' }}>
+              <button className="btn-secondary" onClick={() => setIsGenerateSemestersModalOpen(false)}>Cancel</button>
+              <button className="btn-primary" onClick={async () => {
+                if (!generateSemTargetBatchId) {
+                  toast.error("Please select a batch.");
+                  return;
+                }
+                
+                setIsSaving(true);
+                try {
+                  const batchCommit = writeBatch(db);
+                  const generatedSemesters = generateSemesters(selectedProgramme.duration);
+                  const safeProgId = String(selectedProgramme.id).replace(/\//g, '-');
+                  const targetBatch = hubBatches.find(b => b.batchId === generateSemTargetBatchId);
+                  const safeBatchName = String(targetBatch.batchName || '').replace(/\//g, '-');
+                  const batchDocPath = `${safeProgId}(${safeBatchName})`;
+
+                  for (const sem of generatedSemesters) {
+                    const semDocPath = `${batchDocPath}_${sem.id}`;
+                    batchCommit.set(doc(db, 'Degrees', selectedProgramme.id, 'Semesters', semDocPath), {
+                      degreeId: selectedProgramme.id,
+                      batchId: generateSemTargetBatchId,
+                      semesterId: sem.id,
+                      academicYear: sem.academicYear,
+                      semesterNo: sem.semesterNo,
+                      startDate: '',
+                      endDate: ''
+                    });
+                  }
+                  await batchCommit.commit();
+                  toast.success(`Semesters generated for batch ${generateSemTargetBatchId}`);
+                  setIsGenerateSemestersModalOpen(false);
+                  setGenerateSemTargetBatchId('');
+                  await fetchHubData();
+                } catch (error) {
+                  console.error(error);
+                  toast.error("Failed to generate semesters.");
+                } finally {
+                  setIsSaving(false);
+                }
+              }} disabled={isSaving}>
+                {isSaving ? 'Generating...' : 'Generate Semesters'}
+              </button>
+            </div>
+          </motion.div>
+        </div>
+      )}
+
       <AnimatePresence mode="wait">
         {view === 'list' && renderProgrammeList()}
         {view === 'wizard' && renderWizard()}
         {view === 'edit' && renderEditView()}
         {view === 'details' && renderDetailsHub()}
+        {view === 'batch-details' && renderBatchDetails()}
       </AnimatePresence>
 
       {isEnrollmentModalOpen && (
@@ -2231,7 +2300,7 @@ const ProgrammeManager = ({ setPage, initialTab = 'batches', initialView = 'list
                     }}>
                       {isAutoGeneratingSemesters && <Check size={16} color="white" />}
                     </div>
-                    <span style={{ fontWeight: '600', fontSize: '0.9rem', color: 'var(--text-main)' }}>Auto-generate all semesters ({parseInt(selectedProgramme?.duration || 0) * 2} semesters)</span>
+                    <span style={{ fontWeight: '600', fontSize: '0.9rem', color: 'var(--text-main)' }}>Auto-generate all semesters ({parseInt(selectedProgramme?.duration?.charAt(0) || 3) * 2} semesters)</span>
                   </div>
                 </div>
                 <div style={{ display: 'flex', justifyContent: 'flex-end', gap: '12px', borderTop: '1px solid var(--border-color)', paddingTop: '24px' }}>
@@ -2334,8 +2403,17 @@ const ProgrammeManager = ({ setPage, initialTab = 'batches', initialView = 'list
                     <input type="text" placeholder="Full Name" className="form-input" style={{ padding: '10px' }} value={singleStudent.fullName} onChange={e => setSingleStudent({...singleStudent, fullName: e.target.value})} />
                     <input type="email" placeholder="Email" className="form-input" style={{ padding: '10px' }} value={singleStudent.email} onChange={e => setSingleStudent({...singleStudent, email: e.target.value})} />
                     <input type="text" placeholder="Password" className="form-input" style={{ padding: '10px' }} value={singleStudent.password} onChange={e => setSingleStudent({...singleStudent, password: e.target.value})} />
-                    <button className="btn-primary" style={{ gridColumn: 'span 2' }} onClick={() => {
+                    <button className="btn-primary" style={{ gridColumn: 'span 2' }} onClick={async () => {
                        if(singleStudent.studentId && singleStudent.fullName) {
+                         if (studentList.some(s => s.studentId === singleStudent.studentId)) {
+                           toast.error("Duplicate Student ID detected locally!");
+                           return;
+                         }
+                         const existingIds = await checkStudentIdsUnique([singleStudent.studentId]);
+                         if (existingIds.length > 0) {
+                           toast.error(`Student ID ${singleStudent.studentId} already exists in the system!`);
+                           return;
+                         }
                          setStudentList([...studentList, {...singleStudent}]);
                          setSingleStudent({ studentId: '', fullName: '', email: '', password: '', status: 'active' });
                        } else {

@@ -37,4 +37,13 @@ public class PredictionRequest {
 
     @SerializedName("results")
     public List<Map<String, Object>> results;
+
+    @SerializedName("student_type")
+    public int studentType; // 1 for returning, 2 for new 1st sem
+
+    @SerializedName("ol_maths")
+    public String olMaths;
+
+    @SerializedName("ol_english")
+    public String olEnglish;
 }

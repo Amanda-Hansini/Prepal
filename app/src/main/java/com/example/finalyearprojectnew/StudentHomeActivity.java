@@ -200,14 +200,89 @@ public class StudentHomeActivity extends AppCompatActivity {
                                     calculateGpasAndPopulateUI(allSemesters);
                                     setupSemesterSelectionBar();
                                 } else {
-                                    // Redirect to ManualResultEntryActivity if no data is available
-                                    Intent intent = new Intent(StudentHomeActivity.this, ManualResultEntryActivity.class);
-                                    intent.setFlags(Intent.FLAG_ACTIVITY_NEW_TASK | Intent.FLAG_ACTIVITY_CLEAR_TASK);
-                                    startActivity(intent);
-                                    finish();
+                                    // Redirect based on current date and semester periods
+                                    checkFirstSemesterAndRedirect();
                                 }
                             });
                 });
+    }
+
+    private void checkFirstSemesterAndRedirect() {
+        db.collection("AllStudents").document(studentId).get()
+                .addOnSuccessListener(studentSnap -> {
+                    if (studentSnap.exists()) {
+                        String batchId = studentSnap.getString("batchId");
+                        String programId = studentSnap.getString("programId");
+                        if (batchId != null && programId != null) {
+                            db.collection("Degrees").document(programId)
+                                    .collection("Semesters")
+                                    .whereEqualTo("batchId", batchId)
+                                    .get()
+                                    .addOnSuccessListener(semestersSnap -> {
+                                        boolean isFirstSemester = false;
+                                        String firstSemDocId = null;
+                                        String firstSemName = null;
+                                        java.util.Date currentDate = new java.util.Date();
+                                        java.text.SimpleDateFormat sdf = new java.text.SimpleDateFormat("yyyy-MM-dd", java.util.Locale.getDefault());
+                                        
+                                        for (DocumentSnapshot semDoc : semestersSnap.getDocuments()) {
+                                            String startDateStr = semDoc.getString("startDate");
+                                            String endDateStr = semDoc.getString("endDate");
+                                            String semesterNo = semDoc.getString("semesterNo");
+                                            String sName = semDoc.getString("semesterId");
+                                            
+                                            if (startDateStr != null && endDateStr != null && !startDateStr.isEmpty() && !endDateStr.isEmpty()) {
+                                                try {
+                                                    java.util.Date startDate = sdf.parse(startDateStr);
+                                                    java.util.Date endDate = sdf.parse(endDateStr);
+                                                    // Allow current date to be equal to start/end date
+                                                    if (!currentDate.before(startDate) && !currentDate.after(endDate)) {
+                                                        // Current semester found
+                                                        if ("Semester I".equals(semesterNo) || "1".equals(semesterNo) || (sName != null && sName.contains("Semester I"))) {
+                                                            isFirstSemester = true;
+                                                            firstSemDocId = semDoc.getId();
+                                                            firstSemName = sName;
+                                                        }
+                                                        break;
+                                                    }
+                                                } catch (Exception e) {
+                                                    e.printStackTrace();
+                                                }
+                                            }
+                                        }
+
+                                        if (isFirstSemester && firstSemDocId != null) {
+                                            // Redirect to FirstSemesterQuizActivity
+                                            Intent intent = new Intent(StudentHomeActivity.this, FirstSemesterQuizActivity.class);
+                                            intent.putExtra("semesterDocId", firstSemDocId);
+                                            intent.putExtra("semesterName", firstSemName);
+                                            intent.putExtra("programId", programId);
+                                            intent.setFlags(Intent.FLAG_ACTIVITY_NEW_TASK | Intent.FLAG_ACTIVITY_CLEAR_TASK);
+                                            startActivity(intent);
+                                            finish();
+                                        } else {
+                                            // Redirect to ManualResultEntryActivity
+                                            Intent intent = new Intent(StudentHomeActivity.this, ManualResultEntryActivity.class);
+                                            intent.setFlags(Intent.FLAG_ACTIVITY_NEW_TASK | Intent.FLAG_ACTIVITY_CLEAR_TASK);
+                                            startActivity(intent);
+                                            finish();
+                                        }
+                                    });
+                        } else {
+                            fallbackToManualEntry();
+                        }
+                    } else {
+                        fallbackToManualEntry();
+                    }
+                })
+                .addOnFailureListener(e -> fallbackToManualEntry());
+    }
+
+    private void fallbackToManualEntry() {
+        Intent intent = new Intent(StudentHomeActivity.this, ManualResultEntryActivity.class);
+        intent.setFlags(Intent.FLAG_ACTIVITY_NEW_TASK | Intent.FLAG_ACTIVITY_CLEAR_TASK);
+        startActivity(intent);
+        finish();
     }
 
     private boolean checkFirstSemesterIncomplete(List<DocumentSnapshot> semesters) {

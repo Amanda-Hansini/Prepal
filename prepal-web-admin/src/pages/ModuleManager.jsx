@@ -19,6 +19,8 @@ const ModuleManager = ({ setPage }) => {
   const [degreeFilter, setDegreeFilter] = useState('All');
   const [uniqueDegrees, setUniqueDegrees] = useState([]);
   const [semesterFilter, setSemesterFilter] = useState('All');
+  const [batchFilter, setBatchFilter] = useState('All');
+  const [uniqueBatches, setUniqueBatches] = useState([]);
 
   // Editing state
   const [editingModId, setEditingModId] = useState(null);
@@ -50,6 +52,9 @@ const ModuleManager = ({ setPage }) => {
 
       const degs = Array.from(new Set(fetched.map(m => m.degreeId).filter(Boolean)));
       setUniqueDegrees(degs);
+
+      const batches = Array.from(new Set(fetched.map(m => m.batchId).filter(Boolean)));
+      setUniqueBatches(batches);
     } catch (error) {
       console.error("Error fetching modules:", error);
     } finally {
@@ -271,7 +276,8 @@ const ModuleManager = ({ setPage }) => {
                           (m.degreeId || '').toLowerCase().includes(searchQuery.toLowerCase());
     const matchesDegree = degreeFilter === 'All' || m.degreeId === degreeFilter;
     const matchesSemester = semesterFilter === 'All' || m.semesterId === semesterFilter;
-    return matchesSearch && matchesDegree && matchesSemester;
+    const matchesBatch = batchFilter === 'All' || m.batchId === batchFilter;
+    return matchesSearch && matchesDegree && matchesSemester && matchesBatch;
   });
 
   const uniqueSemesters = Array.from(new Set(modules.filter(m => degreeFilter === 'All' || m.degreeId === degreeFilter).map(m => m.semesterId).filter(Boolean)));
@@ -328,12 +334,20 @@ const ModuleManager = ({ setPage }) => {
                 {uniqueSemesters.map(sem => <option key={sem} value={sem}>{sem}</option>)}
               </select>
             </div>
+            <div className="filter-group" style={{ display: 'flex', gap: '8px', alignItems: 'center' }}>
+              <label style={{ fontSize: '0.85rem', fontWeight: '700' }}>Batch:</label>
+              <select className="form-input" style={{ padding: '8px 12px' }} value={batchFilter} onChange={e => { setBatchFilter(e.target.value); setCurrentPage(1); }}>
+                <option value="All">All Batches</option>
+                {uniqueBatches.map(batch => <option key={batch} value={batch}>{batch}</option>)}
+              </select>
+            </div>
           </div>
 
           <table className="modern-table">
             <thead>
               <tr>
                 <th>Degree Programme</th>
+                <th>Batch</th>
                 <th>Module Code</th>
                 <th>Module Name</th>
                 <th>Semester</th>
@@ -344,13 +358,13 @@ const ModuleManager = ({ setPage }) => {
             <tbody>
               {loading ? (
                 <tr>
-                  <td colSpan="6" style={{ textAlign: 'center', padding: '40px', color: 'var(--text-muted)' }}>
+                  <td colSpan="7" style={{ textAlign: 'center', padding: '40px', color: 'var(--text-muted)' }}>
                     Loading Modules...
                   </td>
                 </tr>
               ) : currentModules.length === 0 ? (
                 <tr>
-                  <td colSpan="6" style={{ textAlign: 'center', padding: '40px', color: 'var(--text-muted)' }}>
+                  <td colSpan="7" style={{ textAlign: 'center', padding: '40px', color: 'var(--text-muted)' }}>
                     No modules found.
                   </td>
                 </tr>
@@ -360,6 +374,9 @@ const ModuleManager = ({ setPage }) => {
                     <>
                       <td>
                         <input type="text" className="form-input" style={{padding: '4px', fontSize: '0.9rem', backgroundColor: '#f1f5f9'}} value={editingModData.degreeId || ''} disabled />
+                      </td>
+                      <td>
+                        <input type="text" className="form-input" style={{padding: '4px', fontSize: '0.9rem', backgroundColor: '#f1f5f9'}} value={editingModData.batchId || ''} disabled />
                       </td>
                       <td className="id-cell">
                         <input type="text" className="form-input" style={{padding: '4px', fontSize: '0.9rem'}} value={editingModData.moduleCode || ''} onChange={e => setEditingModData({...editingModData, moduleCode: e.target.value})} />
@@ -387,6 +404,7 @@ const ModuleManager = ({ setPage }) => {
                           <GraduationCap size={12} style={{ marginRight: '4px', display: 'inline' }} /> {mod.degreeId}
                         </span>
                       </td>
+                      <td style={{ fontWeight: 600 }}>{mod.batchId || 'N/A'}</td>
                       <td className="id-cell">{mod.moduleCode}</td>
                       <td>{mod.moduleName}</td>
                       <td>

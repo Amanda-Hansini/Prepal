@@ -98,6 +98,9 @@
         <activity
             android:name=".QuizActivity"
             android:exported="false" />
+        <activity
+            android:name=".FirstSemesterQuizActivity"
+            android:exported="false" />
 
         <activity
             android:name=".StudentCalendarActivity"
