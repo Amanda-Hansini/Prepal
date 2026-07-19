@@ -1,5 +1,5 @@
 import os
-import requests
+import google.generativeai as genai
 
 SYSTEM_INSTRUCTION = (
     "You are PrePal AI, an expert academic tutor, study planner, and student counselor for university students. "
@@ -10,7 +10,7 @@ SYSTEM_INSTRUCTION = (
 
 def generate_ai_chat_response(user_message, student_context=None):
     """
-    Generates an AI study planning response using Google Gemini API.
+    Generates an AI study planning & counseling response using Google Gemini SDK.
     :param user_message: String user prompt
     :param student_context: Dict containing optional keys like current_gpa, predicted_gpa, stress_level, weak_modules
     :return: dict with 'reply' and 'status'
@@ -20,7 +20,7 @@ def generate_ai_chat_response(user_message, student_context=None):
     
     if not api_key:
         return {
-            "reply": "⚠️ **GEMINI_API_KEY is missing on Render server.**\n\nPlease add `GEMINI_API_KEY` in your Render Environment Variables dashboard.",
+            "reply": "⚠️ **GEMINI_API_KEY is not configured on Render.**\n\nPlease set your free Gemini API key from [Google AI Studio](https://aistudio.google.com/) as an environment variable (`GEMINI_API_KEY`) on your Render server dashboard.",
             "status": "warning"
         }
     
@@ -39,42 +39,26 @@ def generate_ai_chat_response(user_message, student_context=None):
         
     full_prompt = f"{SYSTEM_INSTRUCTION}\n\n{context_str}Student Question: {user_message}"
     
-    payload = {
-        "contents": [
-            {
-                "parts": [{"text": full_prompt}]
-            }
-        ]
-    }
-    headers = {"Content-Type": "application/json"}
-
-    # Use Google Gemini 1.5 Flash (Standard AI Studio Free Model)
-    url = f"https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-flash:generateContent?key={api_key}"
-    
     try:
-        response = requests.post(url, json=payload, headers=headers, timeout=25)
-        print(f"[Gemini API] Response Code: {response.status_code}")
+        genai.configure(api_key=api_key)
         
-        if response.status_code == 200:
-            res_data = response.json()
-            try:
-                reply_text = res_data["candidates"][0]["content"]["parts"][0]["text"]
-                return {"reply": reply_text, "status": "success"}
-            except (KeyError, IndexError):
-                return {"reply": "Sorry, I received an unparseable response format from Gemini.", "status": "error"}
+        # Try gemini-1.5-flash with fallback to gemini-2.0-flash
+        try:
+            model = genai.GenerativeModel("gemini-1.5-flash")
+            response = model.generate_content(full_prompt)
+        except Exception:
+            model = genai.GenerativeModel("gemini-2.0-flash")
+            response = model.generate_content(full_prompt)
+
+        if response and hasattr(response, 'text') and response.text:
+            return {"reply": response.text, "status": "success"}
         else:
-            try:
-                err_json = response.json()
-                err_msg = err_json.get("error", {}).get("message", response.text)
-            except Exception:
-                err_msg = response.text
-                
-            print(f"[Gemini API Error Detail] {err_msg}")
-            return {
-                "reply": f"Google Gemini API Error ({response.status_code}): {err_msg}",
-                "status": "error"
-            }
+            return {"reply": "Sorry, received an empty response from the AI engine.", "status": "error"}
 
     except Exception as e:
-        print(f"[Gemini API Exception] {e}")
-        return {"reply": f"Unable to connect to AI service: {str(e)}", "status": "error"}
+        err_msg = str(e)
+        print(f"[Gemini SDK Exception] {err_msg}")
+        return {
+            "reply": f"Google Gemini API Error: {err_msg}. Please verify your GEMINI_API_KEY in Render environment variables.",
+            "status": "error"
+        }
