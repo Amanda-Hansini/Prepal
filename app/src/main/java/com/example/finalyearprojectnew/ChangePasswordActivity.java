@@ -105,7 +105,7 @@ public class ChangePasswordActivity extends AppCompatActivity {
 
     private void handleSuccess() {
         Toast.makeText(this, "Password updated successfully!", Toast.LENGTH_SHORT).show();
-        Intent intent = new Intent(ChangePasswordActivity.this, ManualResultEntryActivity.class);
+        Intent intent = new Intent(ChangePasswordActivity.this, StudentHomeActivity.class);
         // Clear task so user can't press back to login
         intent.setFlags(Intent.FLAG_ACTIVITY_NEW_TASK | Intent.FLAG_ACTIVITY_CLEAR_TASK);
         startActivity(intent);

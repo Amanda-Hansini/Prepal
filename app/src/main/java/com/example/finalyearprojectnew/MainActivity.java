@@ -315,16 +315,9 @@ public class MainActivity extends AppCompatActivity {
             intent.putExtra("DOCUMENT_PATH", studentDoc.getReference().getPath());
             startActivity(intent);
         } else {
-            Boolean resultsEntered = studentDoc.getBoolean("resultsEntered");
-            if (Boolean.FALSE.equals(resultsEntered) || resultsEntered == null) {
-                Intent intent = new Intent(MainActivity.this, ManualResultEntryActivity.class);
-                startActivity(intent);
-                finish();
-            } else {
-                Intent intent = new Intent(MainActivity.this, StudentHomeActivity.class);
-                startActivity(intent);
-                finish();
-            }
+            Intent intent = new Intent(MainActivity.this, StudentHomeActivity.class);
+            startActivity(intent);
+            finish();
         }
     }
 
