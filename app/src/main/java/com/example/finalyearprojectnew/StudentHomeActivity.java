@@ -508,7 +508,58 @@ public class StudentHomeActivity extends AppCompatActivity {
         
         List<Map<String, Object>> latestResults = null;
         List<Entry> gpaTrendEntries = new ArrayList<>();
-        
+
+        // Filter for actual completed semesters (excluding prediction-only documents)
+        List<DocumentSnapshot> actualSemesters = new ArrayList<>();
+        for (DocumentSnapshot doc : semesters) {
+            Boolean isPredOnly = doc.getBoolean("isPredictionOnly");
+            if (isPredOnly == null || !isPredOnly) {
+                List<Map<String, Object>> mods = (List<Map<String, Object>>) doc.get("modules");
+                if (mods != null && !mods.isEmpty()) {
+                    boolean hasActualGrades = false;
+                    for (Map<String, Object> m : mods) {
+                        if (m.get("grade_point") != null) {
+                            hasActualGrades = true;
+                            break;
+                        }
+                    }
+                    if (hasActualGrades) {
+                        actualSemesters.add(doc);
+                    }
+                }
+            }
+        }
+
+        if (actualSemesters.isEmpty()) {
+            // Student has NO actual completed exam semesters yet (1st Year 1st Semester)
+            double predValue = 0.0;
+            String tip = "Keep going! Complete a prediction to see your target.";
+            
+            if (currentPredictionDoc != null) {
+                Double pGpa = currentPredictionDoc.getDouble("predictedGpa");
+                if (pGpa != null) predValue = pGpa;
+                String t = currentPredictionDoc.getString("motivationTip");
+                if (t != null) tip = t;
+            }
+
+            tvSemGpa.setText("--");
+            tvCumGpa.setText("--");
+            tvPredGpa.setText(String.format(java.util.Locale.US, "%.2f", predValue));
+            tvSemGpaSub.setText("Semester I");
+            tvCumGpaSub.setText("Till Semester I");
+            tvMotivationTip.setText(tip);
+
+            // Display predicted class standing target on the donut chart
+            setupClassStandingChart(predValue, false, true);
+
+            // Display single Sem 1 (Pred.) entry on trend chart
+            setupSinglePredictionTrendChart(predValue, 1);
+            setupPerformanceBarChart(null);
+            return;
+        }
+
+        semesters = actualSemesters;
+
         // Find the last valid semester index
         int targetPos = semesters.size() - 1;
         while (targetPos >= 0 && !isSemesterValid(semesters.get(targetPos))) {
@@ -573,7 +624,7 @@ public class StudentHomeActivity extends AppCompatActivity {
             tvCumGpa.setText(String.format(java.util.Locale.US, "%.2f", targetCumGpa));
             tvSemGpaSub.setText(targetSemName);
             tvCumGpaSub.setText("Till " + targetSemName);
-            setupClassStandingChart(targetCumGpa, false);
+            setupClassStandingChart(targetCumGpa, false, false);
 
             // Match prediction for the valid target semester
             DocumentSnapshot validSem = semesters.get(targetPos);
@@ -605,11 +656,55 @@ public class StudentHomeActivity extends AppCompatActivity {
             tvCumGpa.setText("INC");
             tvSemGpaSub.setText("Semester " + semesters.size());
             tvCumGpaSub.setText("Till Semester " + semesters.size());
-            setupClassStandingChart(0.0, true);
+            setupClassStandingChart(0.0, true, false);
         }
 
         setupGpaTrendChart(gpaTrendEntries);
         setupPerformanceBarChart(latestResults);
+    }
+
+    private void setupSinglePredictionTrendChart(double predGpa, int targetSemNum) {
+        List<Entry> predictionEntries = new ArrayList<>();
+        predictionEntries.add(new Entry(0, (float) predGpa));
+
+        LineData lineData = new LineData();
+        LineDataSet predictionDataSet = new LineDataSet(predictionEntries, "Prediction");
+        styleLineDataSet(predictionDataSet, Color.parseColor("#7C3AED"), false);
+        predictionDataSet.setCircleRadius(8f);
+        predictionDataSet.setDrawValues(true);
+        predictionDataSet.setValueTextSize(12f);
+        predictionDataSet.setValueTextColor(Color.parseColor("#7C3AED"));
+        predictionDataSet.setValueFormatter(new ValueFormatter() {
+            @Override
+            public String getFormattedValue(float value) {
+                return String.format(java.util.Locale.US, "%.2f", value);
+            }
+        });
+        lineData.addDataSet(predictionDataSet);
+
+        lineChartGpa.setData(lineData);
+        lineChartGpa.getDescription().setEnabled(false);
+        lineChartGpa.getLegend().setEnabled(false);
+
+        XAxis xAxis = lineChartGpa.getXAxis();
+        xAxis.setPosition(XAxis.XAxisPosition.BOTTOM);
+        xAxis.setDrawGridLines(false);
+        xAxis.setDrawAxisLine(false);
+        xAxis.setGranularity(1f);
+        xAxis.setAxisMinimum(-0.5f);
+        xAxis.setAxisMaximum(0.5f);
+        xAxis.setLabelCount(1);
+        xAxis.setValueFormatter(new IndexAxisValueFormatter() {
+            @Override
+            public String getFormattedValue(float value) {
+                return "Sem " + targetSemNum + " (Pred.)";
+            }
+        });
+
+        setupYAxis(lineChartGpa.getAxisLeft());
+        lineChartGpa.getAxisRight().setEnabled(false);
+        lineChartGpa.animateY(1000);
+        lineChartGpa.invalidate();
     }
 
     private void updateGpaDisplays(double sem, double cum, double pred, String tip) {
@@ -767,7 +862,7 @@ public class StudentHomeActivity extends AppCompatActivity {
         }
     }
     
-    private void setupClassStandingChart(double cgpa, boolean isInc) {
+    private void setupClassStandingChart(double cgpa, boolean isInc, boolean isTarget) {
         PieChart pieChart = findViewById(R.id.chartDegreeClass);
         pieChart.getDescription().setEnabled(false);
         pieChart.getLegend().setEnabled(false);
@@ -816,7 +911,8 @@ public class StudentHomeActivity extends AppCompatActivity {
             dataSet.setColors(color, Color.parseColor("#E0E0E0"));
         }
         
-        pieChart.setCenterText(className + "\nStanding");
+        String centerText = isTarget ? className + "\n(Target)" : className + "\nStanding";
+        pieChart.setCenterText(centerText);
         pieChart.setCenterTextSize(12f);
         pieChart.setCenterTextColor(color);
         pieChart.setCenterTextTypeface(android.graphics.Typeface.DEFAULT_BOLD);
