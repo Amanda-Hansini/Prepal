@@ -199,7 +199,7 @@
                         android:id="@+id/spinnerOlMaths"
                         android:layout_width="match_parent"
                         android:layout_height="48dp"
-                        android:background="@drawable/spinner_background"
+                        android:background="@drawable/bg_rounded_input"
                         android:layout_marginBottom="16dp"/>
 
                     <TextView
@@ -213,7 +213,7 @@
                         android:id="@+id/spinnerOlEnglish"
                         android:layout_width="match_parent"
                         android:layout_height="48dp"
-                        android:background="@drawable/spinner_background"
+                        android:background="@drawable/bg_rounded_input"
                         android:layout_marginBottom="16dp"/>
                 </LinearLayout>
             </ScrollView>
