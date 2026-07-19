@@ -355,8 +355,7 @@ public class ManualResultEntryActivity extends AppCompatActivity {
                                  if (!isEditMode && historySemesters != null) {
                                      int actualCompletedSemesters = 0;
                                      for (com.google.firebase.firestore.DocumentSnapshot doc : historySemesters) {
-                                         Boolean isPredOnly = doc.getBoolean("isPredictionOnly");
-                                         if (isPredOnly == null || !isPredOnly) {
+                                         if (isActualExamResult(doc)) {
                                              actualCompletedSemesters++;
                                          }
                                      }
@@ -743,6 +742,30 @@ public class ManualResultEntryActivity extends AppCompatActivity {
             this.name = name; 
             this.semesterId = semesterId;
         }
+    }
+
+    private boolean isActualExamResult(com.google.firebase.firestore.DocumentSnapshot doc) {
+        if (doc == null) return false;
+        
+        Boolean isPredOnly = doc.getBoolean("isPredictionOnly");
+        if (Boolean.TRUE.equals(isPredOnly)) {
+            return false;
+        }
+        
+        List<Map<String, Object>> modules = (List<Map<String, Object>>) doc.get("modules");
+        if (modules == null || modules.isEmpty()) {
+            return false;
+        }
+        
+        for (Map<String, Object> mod : modules) {
+            Object gp = mod.get("grade_point");
+            String grade = (String) mod.get("grade");
+            if (gp != null || (grade != null && !grade.trim().isEmpty())) {
+                return true;
+            }
+        }
+        
+        return false;
     }
 
     private static class ModuleData {
