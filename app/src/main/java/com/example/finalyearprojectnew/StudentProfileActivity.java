@@ -131,6 +131,11 @@ public class StudentProfileActivity extends AppCompatActivity {
                 overridePendingTransition(0, 0);
                 finish();
                 return true;
+            } else if (itemId == R.id.nav_chats) {
+                startActivity(new Intent(this, ChatListActivity.class));
+                overridePendingTransition(0, 0);
+                finish();
+                return true;
             } else if (itemId == R.id.nav_profile) {
                 return true;
             }

@@ -1,0 +1,120 @@
+<?xml version="1.0" encoding="utf-8"?>
+<androidx.constraintlayout.widget.ConstraintLayout xmlns:android="http://schemas.android.com/apk/res/android"
+    xmlns:app="http://schemas.android.com/apk/res-auto"
+    xmlns:tools="http://schemas.android.com/tools"
+    android:layout_width="match_parent"
+    android:layout_height="match_parent"
+    android:background="#F2F4F8"
+    tools:context=".ChatActivity">
+
+    <!-- Top Action Bar -->
+    <RelativeLayout
+        android:id="@+id/chatToolBar"
+        android:layout_width="match_parent"
+        android:layout_height="64dp"
+        android:background="#0D2F5A"
+        android:paddingHorizontal="12dp"
+        app:layout_constraintTop_toTopOf="parent">
+
+        <ImageView
+            android:id="@+id/btnBack"
+            android:layout_width="36dp"
+            android:layout_height="36dp"
+            android:layout_centerVertical="true"
+            android:background="?attr/selectableItemBackgroundBorderless"
+            android:padding="6dp"
+            android:src="@drawable/ic_arrow_back"
+            app:tint="#FFFFFF" />
+
+        <de.hdodenhof.circleimageview.CircleImageView
+            android:id="@+id/ivFriendAvatar"
+            android:layout_width="40dp"
+            android:layout_height="40dp"
+            android:layout_centerVertical="true"
+            android:layout_marginStart="8dp"
+            android:layout_toEndOf="@id/btnBack"
+            android:src="@drawable/ic_profile_filled"
+            app:civ_border_color="#FFFFFF"
+            app:civ_border_width="1dp" />
+
+        <LinearLayout
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:layout_centerVertical="true"
+            android:layout_marginStart="12dp"
+            android:layout_toEndOf="@id/ivFriendAvatar"
+            android:orientation="vertical">
+
+            <TextView
+                android:id="@+id/tvFriendName"
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:ellipsize="end"
+                android:maxLines="1"
+                android:text="Friend Name"
+                android:textColor="#FFFFFF"
+                android:textSize="16sp"
+                android:textStyle="bold" />
+
+            <TextView
+                android:id="@+id/tvFriendStatus"
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:text="STU-0001"
+                android:textColor="#D0E3FF"
+                android:textSize="12sp" />
+        </LinearLayout>
+    </RelativeLayout>
+
+    <!-- Messages List -->
+    <androidx.recyclerview.widget.RecyclerView
+        android:id="@+id/rvMessages"
+        android:layout_width="match_parent"
+        android:layout_height="0dp"
+        android:clipToPadding="false"
+        android:paddingTop="8dp"
+        android:paddingBottom="8dp"
+        app:layout_constraintBottom_toTopOf="@id/layoutMessageInput"
+        app:layout_constraintTop_toBottomOf="@id/chatToolBar" />
+
+    <!-- Bottom Message Input Section -->
+    <LinearLayout
+        android:id="@+id/layoutMessageInput"
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:background="#FFFFFF"
+        android:elevation="4dp"
+        android:gravity="center_vertical"
+        android:orientation="horizontal"
+        android:paddingHorizontal="12dp"
+        android:paddingVertical="8dp"
+        app:layout_constraintBottom_toBottomOf="parent">
+
+        <EditText
+            android:id="@+id/etMessageInput"
+            android:layout_width="0dp"
+            android:layout_height="wrap_content"
+            android:layout_weight="1"
+            android:background="@drawable/bg_rounded_input"
+            android:hint="Type a message..."
+            android:inputType="textCapSentences|textMultiLine"
+            android:maxLines="4"
+            android:paddingHorizontal="16dp"
+            android:paddingVertical="10dp"
+            android:textColor="#0D2F5A"
+            android:textColorHint="#6C7B8E"
+            android:textSize="15sp" />
+
+        <com.google.android.material.floatingactionbutton.FloatingActionButton
+            android:id="@+id/btnSend"
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:layout_marginStart="8dp"
+            android:contentDescription="Send Message"
+            android:src="@drawable/ic_send"
+            app:backgroundTint="#057BFE"
+            app:fabSize="mini"
+            app:tint="#FFFFFF" />
+    </LinearLayout>
+
+</androidx.constraintlayout.widget.ConstraintLayout>

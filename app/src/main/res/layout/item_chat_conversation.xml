@@ -1,0 +1,79 @@
+<?xml version="1.0" encoding="utf-8"?>
+<androidx.cardview.widget.CardView xmlns:android="http://schemas.android.com/apk/res/android"
+    xmlns:app="http://schemas.android.com/apk/res-auto"
+    android:layout_width="match_parent"
+    android:layout_height="wrap_content"
+    android:layout_marginHorizontal="12dp"
+    android:layout_marginVertical="6dp"
+    app:cardBackgroundColor="#FFFFFF"
+    app:cardCornerRadius="14dp"
+    app:cardElevation="2dp">
+
+    <RelativeLayout
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:padding="12dp">
+
+        <de.hdodenhof.circleimageview.CircleImageView
+            android:id="@+id/ivFriendAvatar"
+            android:layout_width="52dp"
+            android:layout_height="52dp"
+            android:layout_centerVertical="true"
+            android:layout_marginEnd="12dp"
+            android:src="@drawable/ic_profile_filled"
+            app:civ_border_color="#E0E4EC"
+            app:civ_border_width="1dp" />
+
+        <TextView
+            android:id="@+id/tvTime"
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:layout_alignParentEnd="true"
+            android:layout_alignTop="@id/tvFriendName"
+            android:text="10:30 AM"
+            android:textColor="#6C7B8E"
+            android:textSize="12sp" />
+
+        <TextView
+            android:id="@+id/tvFriendName"
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:layout_toEndOf="@id/ivFriendAvatar"
+            android:layout_toStartOf="@id/tvTime"
+            android:ellipsize="end"
+            android:maxLines="1"
+            android:text="Friend Name"
+            android:textColor="#0D2F5A"
+            android:textSize="16sp"
+            android:textStyle="bold" />
+
+        <TextView
+            android:id="@+id/tvLastMessage"
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:layout_below="@id/tvFriendName"
+            android:layout_marginTop="4dp"
+            android:layout_toEndOf="@id/ivFriendAvatar"
+            android:layout_toStartOf="@+id/tvUnreadBadge"
+            android:ellipsize="end"
+            android:maxLines="1"
+            android:text="Hey! Did you check the new assignment?"
+            android:textColor="#6C7B8E"
+            android:textSize="14sp" />
+
+        <TextView
+            android:id="@+id/tvUnreadBadge"
+            android:layout_width="22dp"
+            android:layout_height="22dp"
+            android:layout_alignParentEnd="true"
+            android:layout_below="@id/tvTime"
+            android:layout_marginTop="4dp"
+            android:background="@drawable/bg_circle_blue"
+            android:gravity="center"
+            android:text="2"
+            android:textColor="#FFFFFF"
+            android:textSize="11sp"
+            android:textStyle="bold"
+            android:visibility="gone" />
+    </RelativeLayout>
+</androidx.cardview.widget.CardView>

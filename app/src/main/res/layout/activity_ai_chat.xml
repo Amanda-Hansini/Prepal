@@ -1,0 +1,220 @@
+<?xml version="1.0" encoding="utf-8"?>
+<androidx.constraintlayout.widget.ConstraintLayout xmlns:android="http://schemas.android.com/apk/res/android"
+    xmlns:app="http://schemas.android.com/apk/res-auto"
+    xmlns:tools="http://schemas.android.com/tools"
+    android:layout_width="match_parent"
+    android:layout_height="match_parent"
+    android:background="#F2F4F8"
+    tools:context=".AiChatActivity">
+
+    <!-- Top Action Bar -->
+    <RelativeLayout
+        android:id="@+id/aiChatToolBar"
+        android:layout_width="match_parent"
+        android:layout_height="64dp"
+        android:background="#0D2F5A"
+        android:paddingHorizontal="12dp"
+        app:layout_constraintTop_toTopOf="parent">
+
+        <ImageView
+            android:id="@+id/btnBack"
+            android:layout_width="36dp"
+            android:layout_height="36dp"
+            android:layout_centerVertical="true"
+            android:background="?attr/selectableItemBackgroundBorderless"
+            android:padding="6dp"
+            android:src="@drawable/ic_arrow_back"
+            app:tint="#FFFFFF" />
+
+        <de.hdodenhof.circleimageview.CircleImageView
+            android:id="@+id/ivAiAvatar"
+            android:layout_width="40dp"
+            android:layout_height="40dp"
+            android:layout_centerVertical="true"
+            android:layout_marginStart="8dp"
+            android:layout_toEndOf="@id/btnBack"
+            android:src="@drawable/ic_ai_assistant"
+            app:civ_border_color="#00E676"
+            app:civ_border_width="2dp" />
+
+        <LinearLayout
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:layout_centerVertical="true"
+            android:layout_marginStart="12dp"
+            android:layout_toEndOf="@id/ivAiAvatar"
+            android:orientation="vertical">
+
+            <TextView
+                android:id="@+id/tvAiTitle"
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:ellipsize="end"
+                android:maxLines="1"
+                android:text="PrePal AI Study Tutor"
+                android:textColor="#FFFFFF"
+                android:textSize="16sp"
+                android:textStyle="bold" />
+
+            <TextView
+                android:id="@+id/tvAiSubtitle"
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:text="Online • Study Planner &amp; Counseling"
+                android:textColor="#00E676"
+                android:textSize="12sp" />
+        </LinearLayout>
+
+        <ImageView
+            android:id="@+id/btnClearChat"
+            android:layout_width="36dp"
+            android:layout_height="36dp"
+            android:layout_alignParentEnd="true"
+            android:layout_centerVertical="true"
+            android:background="?attr/selectableItemBackgroundBorderless"
+            android:padding="6dp"
+            android:src="@drawable/ic_delete"
+            app:tint="#FFFFFF" />
+    </RelativeLayout>
+
+    <!-- Suggestion Chips Horizontal Bar -->
+    <HorizontalScrollView
+        android:id="@+id/svSuggestionChips"
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:background="#E8EEF5"
+        android:paddingVertical="8dp"
+        android:paddingHorizontal="8dp"
+        android:scrollbars="none"
+        app:layout_constraintTop_toBottomOf="@id/aiChatToolBar">
+
+        <LinearLayout
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:orientation="horizontal">
+
+            <com.google.android.material.chip.Chip
+                android:id="@+id/chipStudyPlan"
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:layout_marginEnd="6dp"
+                android:text="📅 7-Day Study Plan"
+                app:chipBackgroundColor="#FFFFFF"
+                app:chipStrokeColor="#057BFE"
+                app:chipStrokeWidth="1dp"
+                android:textColor="#0D2F5A" />
+
+            <com.google.android.material.chip.Chip
+                android:id="@+id/chipRaiseGpa"
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:layout_marginEnd="6dp"
+                android:text="📈 How to Raise GPA?"
+                app:chipBackgroundColor="#FFFFFF"
+                app:chipStrokeColor="#057BFE"
+                app:chipStrokeWidth="1dp"
+                android:textColor="#0D2F5A" />
+
+            <com.google.android.material.chip.Chip
+                android:id="@+id/chipManageStress"
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:layout_marginEnd="6dp"
+                android:text="🧘 Exam Stress Tips"
+                app:chipBackgroundColor="#FFFFFF"
+                app:chipStrokeColor="#057BFE"
+                app:chipStrokeWidth="1dp"
+                android:textColor="#0D2F5A" />
+
+            <com.google.android.material.chip.Chip
+                android:id="@+id/chipWeakModules"
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:layout_marginEnd="6dp"
+                android:text="💡 Focus Weak Modules"
+                app:chipBackgroundColor="#FFFFFF"
+                app:chipStrokeColor="#057BFE"
+                app:chipStrokeWidth="1dp"
+                android:textColor="#0D2F5A" />
+        </LinearLayout>
+    </HorizontalScrollView>
+
+    <!-- Messages List -->
+    <androidx.recyclerview.widget.RecyclerView
+        android:id="@+id/rvAiMessages"
+        android:layout_width="match_parent"
+        android:layout_height="0dp"
+        android:clipToPadding="false"
+        android:paddingTop="8dp"
+        android:paddingBottom="8dp"
+        app:layout_constraintBottom_toTopOf="@id/layoutAiLoading"
+        app:layout_constraintTop_toBottomOf="@id/svSuggestionChips" />
+
+    <!-- AI Loading Indicator -->
+    <LinearLayout
+        android:id="@+id/layoutAiLoading"
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:gravity="center_vertical"
+        android:orientation="horizontal"
+        android:paddingHorizontal="16dp"
+        android:paddingVertical="4dp"
+        android:visibility="gone"
+        app:layout_constraintBottom_toTopOf="@id/layoutAiMessageInput">
+
+        <ProgressBar
+            android:layout_width="20dp"
+            android:layout_height="20dp"
+            android:indeterminateTint="#057BFE" />
+
+        <TextView
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:layout_marginStart="8dp"
+            android:text="PrePal AI is thinking..."
+            android:textColor="#6C7B8E"
+            android:textSize="13sp"
+            android:textStyle="italic" />
+    </LinearLayout>
+
+    <!-- Bottom Message Input Section -->
+    <LinearLayout
+        android:id="@+id/layoutAiMessageInput"
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:background="#FFFFFF"
+        android:elevation="4dp"
+        android:gravity="center_vertical"
+        android:orientation="horizontal"
+        android:paddingHorizontal="12dp"
+        android:paddingVertical="8dp"
+        app:layout_constraintBottom_toBottomOf="parent">
+
+        <EditText
+            android:id="@+id/etAiMessageInput"
+            android:layout_width="0dp"
+            android:layout_height="wrap_content"
+            android:layout_weight="1"
+            android:background="@drawable/bg_rounded_input"
+            android:hint="Ask AI about study plans or issues..."
+            android:inputType="textCapSentences|textMultiLine"
+            android:maxLines="4"
+            android:paddingHorizontal="16dp"
+            android:paddingVertical="10dp"
+            android:textColor="#0D2F5A"
+            android:textColorHint="#6C7B8E"
+            android:textSize="15sp" />
+
+        <com.google.android.material.floatingactionbutton.FloatingActionButton
+            android:id="@+id/btnAiSend"
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:layout_marginStart="8dp"
+            android:contentDescription="Send to AI"
+            android:src="@drawable/ic_send"
+            app:backgroundTint="#057BFE"
+            app:fabSize="mini"
+            app:tint="#FFFFFF" />
+    </LinearLayout>
+
+</androidx.constraintlayout.widget.ConstraintLayout>

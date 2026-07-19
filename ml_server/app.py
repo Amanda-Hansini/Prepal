@@ -3,6 +3,7 @@ import os
 
 from gpa_calculator import calculate_gpa
 from ml_model import predict_returning_student, predict_new_student
+from ai_chatbot import generate_ai_chat_response
 
 app = Flask(__name__)
 
@@ -117,6 +118,23 @@ def predict():
     except Exception as e:
         print(f"[Server Error] {e}")
         return jsonify({'error': str(e)}), 500
+
+@app.route('/api/ai_chat', methods=['POST'])
+def ai_chat():
+    try:
+        json_data = request.get_json(silent=True) or {}
+        user_message = json_data.get('user_message', '').strip()
+        student_context = json_data.get('student_context', {})
+        
+        if not user_message:
+            return jsonify({'error': 'user_message is required'}), 400
+            
+        print(f"[API] AI Chat request: {user_message[:50]}...")
+        ai_result = generate_ai_chat_response(user_message, student_context)
+        return jsonify(ai_result), 200
+    except Exception as e:
+        print(f"[AI Chat Server Error] {e}")
+        return jsonify({'reply': f'Server processing error: {str(e)}', 'status': 'error'}), 500
 
 if __name__ == '__main__':
     app.run(host='0.0.0.0', port=5000, debug=True)

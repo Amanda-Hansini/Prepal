@@ -1,0 +1,180 @@
+<?xml version="1.0" encoding="utf-8"?>
+<androidx.constraintlayout.widget.ConstraintLayout xmlns:android="http://schemas.android.com/apk/res/android"
+    xmlns:app="http://schemas.android.com/apk/res-auto"
+    xmlns:tools="http://schemas.android.com/tools"
+    android:layout_width="match_parent"
+    android:layout_height="match_parent"
+    android:background="#F8FAFF"
+    tools:context=".FriendsActivity">
+
+    <!-- Header Gradient Banner -->
+    <RelativeLayout
+        android:id="@+id/headerBanner"
+        android:layout_width="match_parent"
+        android:layout_height="120dp"
+        android:background="@drawable/ic_top_wave"
+        android:paddingHorizontal="20dp"
+        android:paddingTop="20dp"
+        app:layout_constraintTop_toTopOf="parent">
+
+        <ImageView
+            android:id="@+id/btnBack"
+            android:layout_width="32dp"
+            android:layout_height="32dp"
+            android:background="?attr/selectableItemBackgroundBorderless"
+            android:padding="4dp"
+            android:src="@drawable/ic_arrow_back"
+            app:tint="#FFFFFF" />
+
+        <TextView
+            android:id="@+id/tvHeaderTitle"
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:layout_marginStart="8dp"
+            android:layout_toEndOf="@id/btnBack"
+            android:text="Friends &amp; Classmates"
+            android:textColor="#FFFFFF"
+            android:textSize="20sp"
+            android:textStyle="bold" />
+
+        <TextView
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:layout_below="@id/tvHeaderTitle"
+            android:layout_alignStart="@id/tvHeaderTitle"
+            android:layout_marginTop="2dp"
+            android:text="Find peers, send requests, and chat"
+            android:textColor="#D0E3FF"
+            android:textSize="12sp" />
+    </RelativeLayout>
+
+    <!-- Search Input -->
+    <androidx.cardview.widget.CardView
+        android:id="@+id/cardSearch"
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:layout_marginHorizontal="16dp"
+        android:layout_marginTop="-20dp"
+        app:cardBackgroundColor="#FFFFFF"
+        app:cardCornerRadius="20dp"
+        app:cardElevation="4dp"
+        app:layout_constraintTop_toBottomOf="@id/headerBanner">
+
+        <EditText
+            android:id="@+id/etSearchStudent"
+            android:layout_width="match_parent"
+            android:layout_height="44dp"
+            android:background="@null"
+            android:drawableStart="@drawable/ic_menu"
+            android:drawablePadding="10dp"
+            android:hint="Search students by name or ID..."
+            android:inputType="text"
+            android:paddingHorizontal="16dp"
+            android:textColor="#0D2F5A"
+            android:textColorHint="#6C7B8E"
+            android:textSize="14sp" />
+    </androidx.cardview.widget.CardView>
+
+    <!-- Filter Tabs Header -->
+    <LinearLayout
+        android:id="@+id/layoutTabs"
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:layout_marginTop="12dp"
+        android:gravity="center"
+        android:orientation="horizontal"
+        android:paddingHorizontal="16dp"
+        app:layout_constraintTop_toBottomOf="@id/cardSearch">
+
+        <com.google.android.material.button.MaterialButton
+            android:id="@+id/tabMyFriends"
+            style="@style/Widget.MaterialComponents.Button.OutlinedButton"
+            android:layout_width="0dp"
+            android:layout_height="36dp"
+            android:layout_weight="1"
+            android:insetTop="0dp"
+            android:insetBottom="0dp"
+            android:text="My Friends"
+            android:textAllCaps="false"
+            android:textColor="#057BFE"
+            android:textSize="12sp"
+            app:cornerRadius="18dp"
+            app:strokeColor="#057BFE" />
+
+        <com.google.android.material.button.MaterialButton
+            android:id="@+id/tabRequests"
+            style="@style/Widget.MaterialComponents.Button.OutlinedButton"
+            android:layout_width="0dp"
+            android:layout_height="36dp"
+            android:layout_marginStart="8dp"
+            android:layout_weight="1"
+            android:insetTop="0dp"
+            android:insetBottom="0dp"
+            android:text="Requests"
+            android:textAllCaps="false"
+            android:textColor="#057BFE"
+            android:textSize="12sp"
+            app:cornerRadius="18dp"
+            app:strokeColor="#057BFE" />
+
+        <com.google.android.material.button.MaterialButton
+            android:id="@+id/tabFindNew"
+            style="@style/Widget.MaterialComponents.Button.OutlinedButton"
+            android:layout_width="0dp"
+            android:layout_height="36dp"
+            android:layout_marginStart="8dp"
+            android:layout_weight="1"
+            android:insetTop="0dp"
+            android:insetBottom="0dp"
+            android:text="Find Classmates"
+            android:textAllCaps="false"
+            android:textColor="#057BFE"
+            android:textSize="12sp"
+            app:cornerRadius="18dp"
+            app:strokeColor="#057BFE" />
+    </LinearLayout>
+
+    <!-- RecyclerView -->
+    <androidx.recyclerview.widget.RecyclerView
+        android:id="@+id/rvFriends"
+        android:layout_width="match_parent"
+        android:layout_height="0dp"
+        android:clipToPadding="false"
+        android:paddingTop="8dp"
+        android:paddingBottom="16dp"
+        app:layout_constraintBottom_toBottomOf="parent"
+        app:layout_constraintTop_toBottomOf="@id/layoutTabs" />
+
+    <!-- Empty View state -->
+    <LinearLayout
+        android:id="@+id/llEmptyState"
+        android:layout_width="wrap_content"
+        android:layout_height="wrap_content"
+        android:gravity="center"
+        android:orientation="vertical"
+        android:visibility="gone"
+        app:layout_constraintBottom_toBottomOf="parent"
+        app:layout_constraintEnd_toEndOf="parent"
+        app:layout_constraintStart_toStartOf="parent"
+        app:layout_constraintTop_toBottomOf="@id/layoutTabs">
+
+        <TextView
+            android:id="@+id/tvEmptyTitle"
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:text="No friends found"
+            android:textColor="#0D2F5A"
+            android:textSize="16sp"
+            android:textStyle="bold" />
+
+        <TextView
+            android:id="@+id/tvEmptySubtitle"
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:layout_marginTop="4dp"
+            android:text="Tap 'Find Classmates' to send friend requests!"
+            android:textColor="#6C7B8E"
+            android:textSize="13sp" />
+    </LinearLayout>
+
+</androidx.constraintlayout.widget.ConstraintLayout>

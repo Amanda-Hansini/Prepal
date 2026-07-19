@@ -58,6 +58,7 @@ public class StudentHomeActivity extends AppCompatActivity {
     private android.widget.HorizontalScrollView hsvGpaCards;
     private android.widget.ImageView ivScrollIndicator;
     private androidx.cardview.widget.CardView cardPredGpa;
+    private com.google.android.material.floatingactionbutton.ExtendedFloatingActionButton fabAiAssistant;
 
     @Override
     protected void onCreate(Bundle savedInstanceState) {
@@ -118,6 +119,13 @@ public class StudentHomeActivity extends AppCompatActivity {
         btnViewFullReport.setOnClickListener(v -> {
             startActivity(new Intent(StudentHomeActivity.this, PerformanceReportActivity.class));
         });
+
+        fabAiAssistant = findViewById(R.id.fabAiAssistant);
+        if (fabAiAssistant != null) {
+            fabAiAssistant.setOnClickListener(v -> {
+                startActivity(new Intent(StudentHomeActivity.this, AiChatActivity.class));
+            });
+        }
         
         cardPredGpa = findViewById(R.id.cardPredGpa);
         cardPredGpa.setOnClickListener(v -> showPredictionInsightsDialog());
@@ -1044,7 +1052,12 @@ public class StudentHomeActivity extends AppCompatActivity {
         bottomNavigation.setOnItemSelectedListener(item -> {
             int itemId = item.getItemId();
             if (itemId == R.id.nav_home) return true;
-            else if (itemId == R.id.nav_calendar) {
+            else if (itemId == R.id.nav_chats) {
+                startActivity(new Intent(this, ChatListActivity.class));
+                overridePendingTransition(0, 0);
+                finish();
+                return true;
+            } else if (itemId == R.id.nav_calendar) {
                 startActivity(new Intent(this, StudentCalendarActivity.class));
                 overridePendingTransition(0, 0);
                 finish();

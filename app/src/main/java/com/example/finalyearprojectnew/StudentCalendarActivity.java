@@ -99,8 +99,9 @@ public class StudentCalendarActivity extends AppCompatActivity implements Calend
             } else if (itemId == R.id.nav_calendar) {
                 return true;
             } else if (itemId == R.id.nav_chats) {
-                // ChatsActivity not implemented yet
-                Toast.makeText(this, "Chats coming soon", Toast.LENGTH_SHORT).show();
+                startActivity(new Intent(StudentCalendarActivity.this, ChatListActivity.class));
+                overridePendingTransition(0, 0);
+                finish();
                 return true;
             } else if (itemId == R.id.nav_profile) {
                 startActivity(new Intent(StudentCalendarActivity.this, StudentProfileActivity.class));

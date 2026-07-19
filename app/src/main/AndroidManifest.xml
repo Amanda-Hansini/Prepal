@@ -110,6 +110,24 @@
             android:name=".StudentProfileActivity"
             android:exported="false" />
 
+        <activity
+            android:name=".ChatListActivity"
+            android:exported="false" />
+
+        <activity
+            android:name=".ChatActivity"
+            android:exported="false"
+            android:windowSoftInputMode="adjustResize" />
+
+        <activity
+            android:name=".AiChatActivity"
+            android:exported="false"
+            android:windowSoftInputMode="adjustResize" />
+
+        <activity
+            android:name=".FriendsActivity"
+            android:exported="false" />
+
         <receiver
             android:name=".NotificationReceiver"
             android:exported="false" />
