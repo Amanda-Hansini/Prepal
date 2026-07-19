@@ -7,4 +7,3 @@ firebase-admin
 gunicorn
 werkzeug
 requests
-google-generativeai
