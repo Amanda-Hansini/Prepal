@@ -222,32 +222,64 @@ public class StudentHomeActivity extends AppCompatActivity {
                                         boolean isFirstSemester = false;
                                         String firstSemDocId = null;
                                         String firstSemName = null;
+                                        List<DocumentSnapshot> sems = semestersSnap.getDocuments();
+                                        DocumentSnapshot currentSem = null;
                                         java.util.Date currentDate = new java.util.Date();
                                         java.text.SimpleDateFormat sdf = new java.text.SimpleDateFormat("yyyy-MM-dd", java.util.Locale.getDefault());
-                                        
-                                        for (DocumentSnapshot semDoc : semestersSnap.getDocuments()) {
+
+                                        // Sort semesters by startDate
+                                        java.util.Collections.sort(sems, (d1, d2) -> {
+                                            try {
+                                                java.util.Date date1 = sdf.parse(d1.getString("startDate"));
+                                                java.util.Date date2 = sdf.parse(d2.getString("startDate"));
+                                                return date1.compareTo(date2);
+                                            } catch (Exception e) {
+                                                return 0;
+                                            }
+                                        });
+
+                                        for (int i = 0; i < sems.size(); i++) {
+                                            DocumentSnapshot semDoc = sems.get(i);
                                             String startDateStr = semDoc.getString("startDate");
                                             String endDateStr = semDoc.getString("endDate");
-                                            String semesterNo = semDoc.getString("semesterNo");
-                                            String sName = semDoc.getString("semesterId");
                                             
                                             if (startDateStr != null && endDateStr != null && !startDateStr.isEmpty() && !endDateStr.isEmpty()) {
                                                 try {
                                                     java.util.Date startDate = sdf.parse(startDateStr);
                                                     java.util.Date endDate = sdf.parse(endDateStr);
-                                                    // Allow current date to be equal to start/end date
-                                                    if (!currentDate.before(startDate) && !currentDate.after(endDate)) {
-                                                        // Current semester found
-                                                        if ("Semester I".equals(semesterNo) || "1".equals(semesterNo) || (sName != null && sName.contains("Semester I"))) {
-                                                            isFirstSemester = true;
-                                                            firstSemDocId = semDoc.getId();
-                                                            firstSemName = sName;
+                                                    
+                                                    // If currentDate is before this semester's start date, and we haven't found a semester yet,
+                                                    // it means we are before the first semester even started. So this is the current semester.
+                                                    if (currentDate.before(startDate)) {
+                                                        if (currentSem == null) {
+                                                            currentSem = semDoc;
                                                         }
+                                                        break; // We found the future semester, stop looking.
+                                                    }
+                                                    
+                                                    // If currentDate is after or on startDate
+                                                    currentSem = semDoc;
+                                                    
+                                                    // If it's before or on endDate, we are definitely in this semester
+                                                    if (!currentDate.after(endDate)) {
                                                         break;
                                                     }
+                                                    
+                                                    // If it's after endDate, currentSem will hold this semester,
+                                                    // and the loop will continue to the next semester.
                                                 } catch (Exception e) {
                                                     e.printStackTrace();
                                                 }
+                                            }
+                                        }
+
+                                        if (currentSem != null) {
+                                            String semesterNo = currentSem.getString("semesterNo");
+                                            String sName = currentSem.getString("semesterId");
+                                            if ("Semester I".equals(semesterNo) || "1".equals(semesterNo) || (sName != null && sName.contains("Semester I"))) {
+                                                isFirstSemester = true;
+                                                firstSemDocId = currentSem.getId();
+                                                firstSemName = sName;
                                             }
                                         }
 
