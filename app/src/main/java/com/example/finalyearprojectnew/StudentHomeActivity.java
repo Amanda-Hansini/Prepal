@@ -276,6 +276,7 @@ public class StudentHomeActivity extends AppCompatActivity {
                                         return id1.compareTo(id2);
                                     });
 
+                                    boolean isFirstSemOngoingOrFuture = true;
                                     String firstSemDocId = null;
                                     String firstSemName = "SEM01";
 
@@ -286,31 +287,46 @@ public class StudentHomeActivity extends AppCompatActivity {
                                         if (semIdAttr != null && !semIdAttr.trim().isEmpty()) {
                                             firstSemName = semIdAttr;
                                         }
+
+                                        // Check if Semester 1 end date has passed
+                                        String endDateStr = firstSemDoc.getString("endDate");
+                                        if (endDateStr != null && !endDateStr.trim().isEmpty() && !endDateStr.equalsIgnoreCase("Not Set")) {
+                                            try {
+                                                java.text.SimpleDateFormat sdf = new java.text.SimpleDateFormat("yyyy-MM-dd", java.util.Locale.US);
+                                                java.util.Date endDate = sdf.parse(endDateStr.trim());
+                                                java.util.Date today = new java.util.Date();
+
+                                                // If today's date is past Semester 1 end date, Semester 1 is finished!
+                                                // Student is in Semester 2 (or higher) and needs Model A Manual Result Entry.
+                                                if (today.after(endDate)) {
+                                                    isFirstSemOngoingOrFuture = false;
+                                                }
+                                            } catch (Exception e) {
+                                                e.printStackTrace();
+                                            }
+                                        }
                                     }
 
-                                    // New students who do not have any previous semester results MUST be directed to Model B Quiz
-                                    Intent intent = new Intent(StudentHomeActivity.this, FirstSemesterQuizActivity.class);
-                                    if (firstSemDocId != null) {
-                                        intent.putExtra("semesterDocId", firstSemDocId);
+                                    if (isFirstSemOngoingOrFuture) {
+                                        // Student is in 1st Semester and about to sit for exams -> Model B Quiz
+                                        Intent intent = new Intent(StudentHomeActivity.this, FirstSemesterQuizActivity.class);
+                                        if (firstSemDocId != null) {
+                                            intent.putExtra("semesterDocId", firstSemDocId);
+                                        }
+                                        intent.putExtra("semesterName", firstSemName);
+                                        intent.putExtra("programId", programId);
+                                        if (batchId != null) {
+                                            intent.putExtra("batchId", batchId);
+                                        }
+                                        intent.setFlags(Intent.FLAG_ACTIVITY_NEW_TASK | Intent.FLAG_ACTIVITY_CLEAR_TASK);
+                                        startActivity(intent);
+                                        finish();
+                                    } else {
+                                        // Semester 1 has ended! Student has 1st semester results -> Model A Manual Entry
+                                        fallbackToManualEntry();
                                     }
-                                    intent.putExtra("semesterName", firstSemName);
-                                    intent.putExtra("programId", programId);
-                                    if (batchId != null) {
-                                        intent.putExtra("batchId", batchId);
-                                    }
-                                    intent.setFlags(Intent.FLAG_ACTIVITY_NEW_TASK | Intent.FLAG_ACTIVITY_CLEAR_TASK);
-                                    startActivity(intent);
-                                    finish();
                                 })
-                                .addOnFailureListener(e -> {
-                                    Intent intent = new Intent(StudentHomeActivity.this, FirstSemesterQuizActivity.class);
-                                    intent.putExtra("semesterName", "SEM01");
-                                    intent.putExtra("programId", programId);
-                                    if (batchId != null) intent.putExtra("batchId", batchId);
-                                    intent.setFlags(Intent.FLAG_ACTIVITY_NEW_TASK | Intent.FLAG_ACTIVITY_CLEAR_TASK);
-                                    startActivity(intent);
-                                    finish();
-                                });
+                                .addOnFailureListener(e -> fallbackToManualEntry());
                     } else {
                         fallbackToManualEntry();
                     }
