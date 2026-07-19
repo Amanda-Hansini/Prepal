@@ -230,8 +230,10 @@ public class StudentHomeActivity extends AppCompatActivity {
                                         // Sort semesters by startDate
                                         java.util.Collections.sort(sems, (d1, d2) -> {
                                             try {
-                                                java.util.Date date1 = sdf.parse(d1.getString("startDate"));
-                                                java.util.Date date2 = sdf.parse(d2.getString("startDate"));
+                                                String start1 = d1.getString("startDate").replaceAll("[./]", "-");
+                                                String start2 = d2.getString("startDate").replaceAll("[./]", "-");
+                                                java.util.Date date1 = sdf.parse(start1);
+                                                java.util.Date date2 = sdf.parse(start2);
                                                 return date1.compareTo(date2);
                                             } catch (Exception e) {
                                                 return 0;
@@ -245,6 +247,8 @@ public class StudentHomeActivity extends AppCompatActivity {
                                             
                                             if (startDateStr != null && endDateStr != null && !startDateStr.isEmpty() && !endDateStr.isEmpty()) {
                                                 try {
+                                                    startDateStr = startDateStr.replaceAll("[./]", "-");
+                                                    endDateStr = endDateStr.replaceAll("[./]", "-");
                                                     java.util.Date startDate = sdf.parse(startDateStr);
                                                     java.util.Date endDate = sdf.parse(endDateStr);
                                                     
@@ -273,13 +277,12 @@ public class StudentHomeActivity extends AppCompatActivity {
                                             }
                                         }
 
-                                        if (currentSem != null) {
-                                            String semesterNo = currentSem.getString("semesterNo");
-                                            String sName = currentSem.getString("semesterId");
-                                            if ("Semester I".equals(semesterNo) || "1".equals(semesterNo) || (sName != null && sName.contains("Semester I"))) {
+                                        if (currentSem != null && !sems.isEmpty()) {
+                                            DocumentSnapshot firstChronologicalSem = sems.get(0);
+                                            if (currentSem.getId().equals(firstChronologicalSem.getId())) {
                                                 isFirstSemester = true;
                                                 firstSemDocId = currentSem.getId();
-                                                firstSemName = sName;
+                                                firstSemName = currentSem.getString("semesterId");
                                             }
                                         }
 
