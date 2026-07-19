@@ -97,46 +97,53 @@ public class FirstSemesterQuizActivity extends AppCompatActivity {
 
         String batchId = getIntent().getStringExtra("batchId");
         if (batchId == null) batchId = "";
+        
+        if (programId == null || programId.trim().isEmpty()) {
+            programId = "BIT";
+        }
+        if (semesterName == null || semesterName.trim().isEmpty()) {
+            semesterName = "SEM01";
+        }
+
+        final String finalBatchId = batchId;
 
         FirebaseFirestore.getInstance().collection("Degrees").document(programId)
                 .collection("Modules")
-                .whereEqualTo("batchId", batchId)
                 .whereEqualTo("semesterId", semesterName)
                 .get()
                 .addOnSuccessListener(queryDocumentSnapshots -> {
                     dialog.dismiss();
                     if (!queryDocumentSnapshots.isEmpty()) {
-                        List<Map<String, Object>> modules = new ArrayList<>();
-                        for (com.google.firebase.firestore.DocumentSnapshot doc : queryDocumentSnapshots) {
-                            modules.add(doc.getData());
-                        }
+                        List<Map<String, Object>> allModules = new ArrayList<>();
+                        List<Map<String, Object>> matchingModules = new ArrayList<>();
 
-                        boolean hasCredits = false;
-                        for (Map<String, Object> mod : modules) {
-                            Object creditsObj = mod.get("credits");
-                            if (creditsObj != null && !creditsObj.toString().trim().isEmpty()) {
-                                hasCredits = true;
-                                break;
+                        for (com.google.firebase.firestore.DocumentSnapshot doc : queryDocumentSnapshots) {
+                            Map<String, Object> data = doc.getData();
+                            if (data != null) {
+                                allModules.add(data);
+                                String semBatchId = (String) data.get("batchId");
+                                String semBatchName = (String) data.get("batchName");
+                                if (!finalBatchId.isEmpty()) {
+                                    if (finalBatchId.equalsIgnoreCase(semBatchId) || finalBatchId.equalsIgnoreCase(semBatchName)) {
+                                        matchingModules.add(data);
+                                    }
+                                }
                             }
                         }
-                        if (!hasCredits) {
-                            Toast.makeText(this, "Semester modules lack credit information. Cannot predict GPA.", Toast.LENGTH_LONG).show();
-                            finish();
-                            return;
-                        }
-                        studentResults = modules;
+
+                        List<Map<String, Object>> modulesToUse = !matchingModules.isEmpty() ? matchingModules : allModules;
+
+                        studentResults = modulesToUse;
                         buildQuestionsList();
                         populateDynamicAttendanceList();
                         updateQuestion();
                     } else {
-                        Toast.makeText(this, "No modules found for this semester.", Toast.LENGTH_LONG).show();
-                        finish();
+                        Toast.makeText(this, "No modules found for " + semesterName, Toast.LENGTH_LONG).show();
                     }
                 })
                 .addOnFailureListener(e -> {
                     dialog.dismiss();
-                    Toast.makeText(this, "Failed to load modules.", Toast.LENGTH_LONG).show();
-                    finish();
+                    Toast.makeText(this, "Failed to load modules: " + e.getMessage(), Toast.LENGTH_LONG).show();
                 });
     }
 

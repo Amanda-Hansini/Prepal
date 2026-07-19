@@ -208,19 +208,45 @@ public class StudentHomeActivity extends AppCompatActivity {
                 });
     }
 
+    private String resolveProgramId(DocumentSnapshot studentSnap) {
+        String programId = studentSnap.getString("programId");
+        if (programId == null || programId.trim().isEmpty()) {
+            programId = studentSnap.getString("degree");
+        }
+        if (programId == null || programId.trim().isEmpty()) {
+            programId = studentSnap.getString("degreeId");
+        }
+        if (programId == null || programId.trim().isEmpty()) {
+            String batchId = studentSnap.getString("batchId");
+            if (batchId != null && !batchId.trim().isEmpty()) {
+                int index = batchId.indexOf('(');
+                if (index > 0) {
+                    programId = batchId.substring(0, index).trim();
+                } else {
+                    index = batchId.indexOf(' ');
+                    if (index > 0) {
+                        programId = batchId.substring(0, index).trim();
+                    } else {
+                        programId = batchId.trim();
+                    }
+                }
+            }
+        }
+        return (programId != null && !programId.trim().isEmpty()) ? programId.trim() : "BIT";
+    }
+
     private void checkFirstSemesterAndRedirect() {
         db.collection("AllStudents").document(studentId).get()
                 .addOnSuccessListener(studentSnap -> {
                     if (studentSnap.exists()) {
                         String batchId = studentSnap.getString("batchId");
                         String batchName = studentSnap.getString("batchName");
-                        String programId = studentSnap.getString("programId");
+                        String programId = resolveProgramId(studentSnap);
 
-                        if (programId != null) {
-                            db.collection("Degrees").document(programId)
-                                    .collection("Semesters")
-                                    .get()
-                                    .addOnSuccessListener(semestersSnap -> {
+                        db.collection("Degrees").document(programId)
+                                .collection("Semesters")
+                                .get()
+                                .addOnSuccessListener(semestersSnap -> {
                                         List<DocumentSnapshot> sems = new ArrayList<>();
                                         for (DocumentSnapshot doc : semestersSnap.getDocuments()) {
                                             String semBatchId = doc.getString("batchId");
