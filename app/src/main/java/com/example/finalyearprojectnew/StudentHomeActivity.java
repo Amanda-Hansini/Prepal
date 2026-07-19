@@ -227,17 +227,14 @@ public class StudentHomeActivity extends AppCompatActivity {
                                         java.util.Date currentDate = new java.util.Date();
                                         java.text.SimpleDateFormat sdf = new java.text.SimpleDateFormat("yyyy-MM-dd", java.util.Locale.getDefault());
 
-                                        // Sort semesters by startDate
+                                        // Sort semesters by semesterId (e.g., SEM01, SEM02) to ensure strict curricular order
+                                        // This avoids issues where future semesters have no start/end dates set yet.
                                         java.util.Collections.sort(sems, (d1, d2) -> {
-                                            try {
-                                                String start1 = d1.getString("startDate").replaceAll("[./]", "-");
-                                                String start2 = d2.getString("startDate").replaceAll("[./]", "-");
-                                                java.util.Date date1 = sdf.parse(start1);
-                                                java.util.Date date2 = sdf.parse(start2);
-                                                return date1.compareTo(date2);
-                                            } catch (Exception e) {
-                                                return 0;
-                                            }
+                                            String id1 = d1.getString("semesterId");
+                                            String id2 = d2.getString("semesterId");
+                                            if (id1 == null) return 1;
+                                            if (id2 == null) return -1;
+                                            return id1.compareTo(id2);
                                         });
 
                                         for (int i = 0; i < sems.size(); i++) {
@@ -245,15 +242,14 @@ public class StudentHomeActivity extends AppCompatActivity {
                                             String startDateStr = semDoc.getString("startDate");
                                             String endDateStr = semDoc.getString("endDate");
                                             
-                                            if (startDateStr != null && endDateStr != null && !startDateStr.isEmpty() && !endDateStr.isEmpty()) {
+                                            if (startDateStr != null && endDateStr != null && !startDateStr.trim().isEmpty() && !endDateStr.trim().isEmpty()) {
                                                 try {
                                                     startDateStr = startDateStr.replaceAll("[./]", "-");
                                                     endDateStr = endDateStr.replaceAll("[./]", "-");
                                                     java.util.Date startDate = sdf.parse(startDateStr);
                                                     java.util.Date endDate = sdf.parse(endDateStr);
                                                     
-                                                    // If currentDate is before this semester's start date, and we haven't found a semester yet,
-                                                    // it means we are before the first semester even started. So this is the current semester.
+                                                    // If currentDate is before this semester's start date
                                                     if (currentDate.before(startDate)) {
                                                         if (currentSem == null) {
                                                             currentSem = semDoc;
@@ -269,12 +265,15 @@ public class StudentHomeActivity extends AppCompatActivity {
                                                         break;
                                                     }
                                                     
-                                                    // If it's after endDate, currentSem will hold this semester,
-                                                    // and the loop will continue to the next semester.
                                                 } catch (Exception e) {
                                                     e.printStackTrace();
                                                 }
                                             }
+                                        }
+
+                                        // Fallback: If no semester has valid dates, default to the first one
+                                        if (currentSem == null && !sems.isEmpty()) {
+                                            currentSem = sems.get(0);
                                         }
 
                                         if (currentSem != null && !sems.isEmpty()) {
