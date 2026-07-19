@@ -247,78 +247,70 @@ public class StudentHomeActivity extends AppCompatActivity {
                                 .collection("Semesters")
                                 .get()
                                 .addOnSuccessListener(semestersSnap -> {
-                                        List<DocumentSnapshot> sems = new ArrayList<>();
-                                        for (DocumentSnapshot doc : semestersSnap.getDocuments()) {
-                                            String semBatchId = doc.getString("batchId");
-                                            String semBatchName = doc.getString("batchName");
+                                    List<DocumentSnapshot> sems = new ArrayList<>();
+                                    for (DocumentSnapshot doc : semestersSnap.getDocuments()) {
+                                        String semBatchId = doc.getString("batchId");
+                                        String semBatchName = doc.getString("batchName");
 
-                                            if (batchId != null && batchId.equalsIgnoreCase(semBatchId)) {
-                                                sems.add(doc);
-                                            } else if (batchName != null && batchName.equalsIgnoreCase(semBatchId)) {
-                                                sems.add(doc);
-                                            } else if (batchId != null && batchId.equalsIgnoreCase(semBatchName)) {
-                                                sems.add(doc);
-                                            } else if (batchName != null && batchName.equalsIgnoreCase(semBatchName)) {
-                                                sems.add(doc);
-                                            }
+                                        if (batchId != null && batchId.equalsIgnoreCase(semBatchId)) {
+                                            sems.add(doc);
+                                        } else if (batchName != null && batchName.equalsIgnoreCase(semBatchId)) {
+                                            sems.add(doc);
+                                        } else if (batchId != null && batchId.equalsIgnoreCase(semBatchName)) {
+                                            sems.add(doc);
+                                        } else if (batchName != null && batchName.equalsIgnoreCase(semBatchName)) {
+                                            sems.add(doc);
                                         }
+                                    }
 
-                                        if (sems.isEmpty()) {
-                                            sems = semestersSnap.getDocuments();
-                                        }
+                                    if (sems.isEmpty()) {
+                                        sems = semestersSnap.getDocuments();
+                                    }
 
-                                        // Sort semesters by semesterId (e.g. SEM01, SEM02)
-                                        java.util.Collections.sort(sems, (d1, d2) -> {
-                                            String id1 = d1.getString("semesterId");
-                                            String id2 = d2.getString("semesterId");
-                                            if (id1 == null) return 1;
-                                            if (id2 == null) return -1;
-                                            return id1.compareTo(id2);
-                                        });
-
-                                        String firstSemDocId = null;
-                                        String firstSemName = "SEM01";
-
-                                        if (!sems.isEmpty()) {
-                                            DocumentSnapshot firstSemDoc = sems.get(0);
-                                            firstSemDocId = firstSemDoc.getId();
-                                            String semIdAttr = firstSemDoc.getString("semesterId");
-                                            if (semIdAttr != null && !semIdAttr.trim().isEmpty()) {
-                                                firstSemName = semIdAttr;
-                                            }
-                                        }
-
-                                        // New students who do not have any previous semester results MUST be directed to Model B Quiz
-                                        Intent intent = new Intent(StudentHomeActivity.this, FirstSemesterQuizActivity.class);
-                                        if (firstSemDocId != null) {
-                                            intent.putExtra("semesterDocId", firstSemDocId);
-                                        }
-                                        intent.putExtra("semesterName", firstSemName);
-                                        intent.putExtra("programId", programId);
-                                        if (batchId != null) {
-                                            intent.putExtra("batchId", batchId);
-                                        }
-                                        intent.setFlags(Intent.FLAG_ACTIVITY_NEW_TASK | Intent.FLAG_ACTIVITY_CLEAR_TASK);
-                                        startActivity(intent);
-                                        finish();
-                                    })
-                                    .addOnFailureListener(e -> {
-                                        Intent intent = new Intent(StudentHomeActivity.this, FirstSemesterQuizActivity.class);
-                                        intent.putExtra("semesterName", "SEM01");
-                                        intent.putExtra("programId", programId);
-                                        if (batchId != null) intent.putExtra("batchId", batchId);
-                                        intent.setFlags(Intent.FLAG_ACTIVITY_NEW_TASK | Intent.FLAG_ACTIVITY_CLEAR_TASK);
-                                        startActivity(intent);
-                                        finish();
+                                    // Sort semesters by semesterId (e.g. SEM01, SEM02)
+                                    java.util.Collections.sort(sems, (d1, d2) -> {
+                                        String id1 = d1.getString("semesterId");
+                                        String id2 = d2.getString("semesterId");
+                                        if (id1 == null) return 1;
+                                        if (id2 == null) return -1;
+                                        return id1.compareTo(id2);
                                     });
-                        } else {
-                            // Fallback to quiz if programId missing
-                            Intent intent = new Intent(StudentHomeActivity.this, FirstSemesterQuizActivity.class);
-                            intent.putExtra("semesterName", "SEM01");
-                            intent.setFlags(Intent.FLAG_ACTIVITY_NEW_TASK | Intent.FLAG_ACTIVITY_CLEAR_TASK);
-                            startActivity(intent);
-                            finish();
-                        }
+
+                                    String firstSemDocId = null;
+                                    String firstSemName = "SEM01";
+
+                                    if (!sems.isEmpty()) {
+                                        DocumentSnapshot firstSemDoc = sems.get(0);
+                                        firstSemDocId = firstSemDoc.getId();
+                                        String semIdAttr = firstSemDoc.getString("semesterId");
+                                        if (semIdAttr != null && !semIdAttr.trim().isEmpty()) {
+                                            firstSemName = semIdAttr;
+                                        }
+                                    }
+
+                                    // New students who do not have any previous semester results MUST be directed to Model B Quiz
+                                    Intent intent = new Intent(StudentHomeActivity.this, FirstSemesterQuizActivity.class);
+                                    if (firstSemDocId != null) {
+                                        intent.putExtra("semesterDocId", firstSemDocId);
+                                    }
+                                    intent.putExtra("semesterName", firstSemName);
+                                    intent.putExtra("programId", programId);
+                                    if (batchId != null) {
+                                        intent.putExtra("batchId", batchId);
+                                    }
+                                    intent.setFlags(Intent.FLAG_ACTIVITY_NEW_TASK | Intent.FLAG_ACTIVITY_CLEAR_TASK);
+                                    startActivity(intent);
+                                    finish();
+                                })
+                                .addOnFailureListener(e -> {
+                                    Intent intent = new Intent(StudentHomeActivity.this, FirstSemesterQuizActivity.class);
+                                    intent.putExtra("semesterName", "SEM01");
+                                    intent.putExtra("programId", programId);
+                                    if (batchId != null) intent.putExtra("batchId", batchId);
+                                    intent.setFlags(Intent.FLAG_ACTIVITY_NEW_TASK | Intent.FLAG_ACTIVITY_CLEAR_TASK);
+                                    startActivity(intent);
+                                    finish();
+                                });
                     } else {
                         fallbackToManualEntry();
                     }
