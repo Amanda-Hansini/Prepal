@@ -10,19 +10,10 @@ SYSTEM_INSTRUCTION = (
 
 def generate_ai_chat_response(user_message, student_context=None):
     """
-    Generates an AI study planning & counseling response using Google Gemini REST API.
-    :param user_message: String user prompt
-    :param student_context: Dict containing optional keys like current_gpa, predicted_gpa, stress_level, weak_modules
-    :return: dict with 'reply' and 'status'
+    Generates an AI study planning response supporting Groq API (Llama-3.3 70B) or Google Gemini API.
     """
-    raw_api_key = os.environ.get("GEMINI_API_KEY", "")
-    api_key = raw_api_key.strip().strip('"').strip("'")
-    
-    if not api_key:
-        return {
-            "reply": "⚠️ **GEMINI_API_KEY is not configured on Render.**\n\nPlease set your free Gemini API key from [Google AI Studio](https://aistudio.google.com/) as an environment variable (`GEMINI_API_KEY`) on your Render server dashboard.",
-            "status": "warning"
-        }
+    groq_key = os.environ.get("GROQ_API_KEY", "").strip().strip('"').strip("'")
+    gemini_key = os.environ.get("GEMINI_API_KEY", "").strip().strip('"').strip("'")
     
     # Build context string if provided
     context_str = ""
@@ -38,48 +29,69 @@ def generate_ai_chat_response(user_message, student_context=None):
         context_str += "]\n\n"
         
     full_prompt = f"{SYSTEM_INSTRUCTION}\n\n{context_str}Student Question: {user_message}"
-    
-    payload = {
-        "contents": [
-            {
-                "parts": [{"text": full_prompt}]
-            }
-        ]
-    }
-    headers = {"Content-Type": "application/json"}
 
-    models = ["gemini-1.5-flash", "gemini-2.0-flash"]
-    last_err = ""
-
-    for model in models:
-        url = f"https://generativelanguage.googleapis.com/v1beta/models/{model}:generateContent?key={api_key}"
+    # 1. Try Groq API first if key is present (Fastest & 100% Free 14,400 req/day)
+    if groq_key:
         try:
-            response = requests.post(url, json=payload, headers=headers, timeout=25)
-            print(f"[Gemini API] Model: {model}, Status: {response.status_code}")
-            
-            if response.status_code == 200:
-                res_data = response.json()
-                try:
-                    reply_text = res_data["candidates"][0]["content"]["parts"][0]["text"]
-                    return {"reply": reply_text, "status": "success"}
-                except (KeyError, IndexError):
-                    return {"reply": "Sorry, received an unparseable response from Gemini.", "status": "error"}
+            url = "https://api.groq.com/openai/v1/chat/completions"
+            headers = {
+                "Authorization": f"Bearer {groq_key}",
+                "Content-Type": "application/json"
+            }
+            payload = {
+                "model": "llama-3.3-70b-versatile",
+                "messages": [
+                    {"role": "system", "content": SYSTEM_INSTRUCTION},
+                    {"role": "user", "content": f"{context_str}Student Question: {user_message}"}
+                ],
+                "temperature": 0.7
+            }
+            res = requests.post(url, json=payload, headers=headers, timeout=25)
+            if res.status_code == 200:
+                data = res.json()
+                reply = data["choices"][0]["message"]["content"]
+                return {"reply": reply, "status": "success"}
             else:
-                try:
-                    err_json = response.json()
-                    err_msg = err_json.get("error", {}).get("message", response.text)
-                except Exception:
-                    err_msg = response.text
-                last_err = f"({response.status_code}) {err_msg}"
-                if response.status_code == 404:
-                    continue
-                else:
-                    break
+                print(f"[Groq Error {res.status_code}] {res.text}")
         except Exception as e:
-            last_err = str(e)
-            continue
+            print(f"[Groq Exception] {e}")
 
+    # 2. Try Gemini API if key is present
+    if gemini_key:
+        headers = {"Content-Type": "application/json"}
+        payload = {
+            "contents": [
+                {
+                    "parts": [{"text": full_prompt}]
+                }
+            ]
+        }
+        
+        for model in ["gemini-1.5-flash", "gemini-2.0-flash", "gemini-1.5-pro"]:
+            url = f"https://generativelanguage.googleapis.com/v1beta/models/{model}:generateContent?key={gemini_key}"
+            try:
+                res = requests.post(url, json=payload, headers=headers, timeout=25)
+                if res.status_code == 200:
+                    data = res.json()
+                    reply = data["candidates"][0]["content"]["parts"][0]["text"]
+                    return {"reply": reply, "status": "success"}
+                else:
+                    err_json = res.json() if res.headers.get("content-type", "").startswith("application/json") else {}
+                    err_msg = err_json.get("error", {}).get("message", res.text)
+                    print(f"[Gemini {model} Error] {err_msg}")
+                    if "429" in str(res.status_code) or "Quota" in err_msg:
+                        continue
+            except Exception as e:
+                print(f"[Gemini Exception {model}] {e}")
+
+    # Fallback if no keys or all failed
+    if not groq_key and not gemini_key:
+        return {
+            "reply": "⚠️ **AI Key is missing.**\n\nPlease add `GROQ_API_KEY` (Free from console.groq.com) or `GEMINI_API_KEY` on Render Environment variables.",
+            "status": "warning"
+        }
+    
     return {
-        "reply": f"Google Gemini API Error: {last_err}. Please double check your GEMINI_API_KEY on Render.",
+        "reply": "⚠️ Google Gemini free quota is currently limited (0 limit) for your Google account region. Please get a **100% Free Groq API Key** from [console.groq.com](https://console.groq.com/keys) and add `GROQ_API_KEY` in Render environment variables!",
         "status": "error"
     }
