@@ -352,23 +352,31 @@ public class ManualResultEntryActivity extends AppCompatActivity {
                                 displayNames.clear();
                                 displayNames.add("Select Semester");
 
-                                if (!isEditMode && historySemesters != null) {
-                                    int nextSemIndex = historySemesters.size();
-                                    if (nextSemIndex < semesterList.size()) {
-                                        SemesterInfo nextSem = semesterList.get(nextSemIndex);
-                                        semesterList.clear();
-                                        semesterList.add(nextSem);
-                                        displayNames.add(nextSem.name);
-                                    } else {
-                                        semesterList.clear();
-                                        displayNames.add("All semesters entered!");
-                                    }
-                                } else {
-                                    for (SemesterInfo info : semesterList) {
-                                        displayNames.add(info.name);
-                                    }
-                                }
-                                updateSemesterSpinner(displayNames);
+                                 if (!isEditMode && historySemesters != null) {
+                                     int actualCompletedSemesters = 0;
+                                     for (com.google.firebase.firestore.DocumentSnapshot doc : historySemesters) {
+                                         Boolean isPredOnly = doc.getBoolean("isPredictionOnly");
+                                         if (isPredOnly == null || !isPredOnly) {
+                                             actualCompletedSemesters++;
+                                         }
+                                     }
+
+                                     int nextSemIndex = actualCompletedSemesters;
+                                     if (nextSemIndex < semesterList.size()) {
+                                         SemesterInfo nextSem = semesterList.get(nextSemIndex);
+                                         semesterList.clear();
+                                         semesterList.add(nextSem);
+                                         displayNames.add(nextSem.name);
+                                     } else {
+                                         semesterList.clear();
+                                         displayNames.add("All semesters entered!");
+                                     }
+                                 } else {
+                                     for (SemesterInfo info : semesterList) {
+                                         displayNames.add(info.name);
+                                     }
+                                 }
+                                 updateSemesterSpinner(displayNames);
                             })
                             .addOnFailureListener(e -> {
                                 Toast.makeText(this, "Failed to load semesters: " + e.getMessage(), Toast.LENGTH_SHORT).show();

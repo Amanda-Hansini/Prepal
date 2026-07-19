@@ -399,6 +399,7 @@ public class QuizActivity extends AppCompatActivity {
         semesterData.put("abModules", response.abModules);
         semesterData.put("mcModules", response.mcModules);
         semesterData.put("neModules", response.neModules);
+        semesterData.put("isPredictionOnly", false);
 
         db.collection("AllStudents").document(studentId)
                 .collection("SemesterResults").document(semesterName)
