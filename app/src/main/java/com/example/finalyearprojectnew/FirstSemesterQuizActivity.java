@@ -95,43 +95,47 @@ public class FirstSemesterQuizActivity extends AppCompatActivity {
         dialog.setCancelable(false);
         dialog.show();
 
+        String batchId = getIntent().getStringExtra("batchId");
+        if (batchId == null) batchId = "";
+
         FirebaseFirestore.getInstance().collection("Degrees").document(programId)
-                .collection("Semesters").document(semesterDocId)
+                .collection("Modules")
+                .whereEqualTo("batchId", batchId)
+                .whereEqualTo("semesterId", semesterName)
                 .get()
-                .addOnSuccessListener(documentSnapshot -> {
+                .addOnSuccessListener(queryDocumentSnapshots -> {
                     dialog.dismiss();
-                    if (documentSnapshot.exists()) {
-                        List<Map<String, Object>> modules = (List<Map<String, Object>>) documentSnapshot.get("modules");
-                        if (modules != null && !modules.isEmpty()) {
-                            boolean hasCredits = false;
-                            for (Map<String, Object> mod : modules) {
-                                Object creditsObj = mod.get("credits");
-                                if (creditsObj != null) {
-                                    hasCredits = true;
-                                    break;
-                                }
-                            }
-                            if (!hasCredits) {
-                                Toast.makeText(this, "Semester modules lack credit information. Cannot predict GPA.", Toast.LENGTH_LONG).show();
-                                finish();
-                                return;
-                            }
-                            studentResults = modules;
-                            buildQuestionsList();
-                            populateDynamicAttendanceList();
-                            updateQuestion();
-                        } else {
-                            Toast.makeText(this, "No modules found for this semester.", Toast.LENGTH_LONG).show();
-                            finish();
+                    if (!queryDocumentSnapshots.isEmpty()) {
+                        List<Map<String, Object>> modules = new ArrayList<>();
+                        for (com.google.firebase.firestore.DocumentSnapshot doc : queryDocumentSnapshots) {
+                            modules.add(doc.getData());
                         }
+
+                        boolean hasCredits = false;
+                        for (Map<String, Object> mod : modules) {
+                            Object creditsObj = mod.get("credits");
+                            if (creditsObj != null && !creditsObj.toString().trim().isEmpty()) {
+                                hasCredits = true;
+                                break;
+                            }
+                        }
+                        if (!hasCredits) {
+                            Toast.makeText(this, "Semester modules lack credit information. Cannot predict GPA.", Toast.LENGTH_LONG).show();
+                            finish();
+                            return;
+                        }
+                        studentResults = modules;
+                        buildQuestionsList();
+                        populateDynamicAttendanceList();
+                        updateQuestion();
                     } else {
-                        Toast.makeText(this, "Semester data not found.", Toast.LENGTH_LONG).show();
+                        Toast.makeText(this, "No modules found for this semester.", Toast.LENGTH_LONG).show();
                         finish();
                     }
                 })
                 .addOnFailureListener(e -> {
                     dialog.dismiss();
-                    Toast.makeText(this, "Failed to load semester data.", Toast.LENGTH_LONG).show();
+                    Toast.makeText(this, "Failed to load modules.", Toast.LENGTH_LONG).show();
                     finish();
                 });
     }
