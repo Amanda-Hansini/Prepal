@@ -464,7 +464,7 @@ public class StudentHomeActivity extends AppCompatActivity {
                     double cumGpa = totalCreds > 0 ? (totalPts / totalCreds) : 0;
                     tvCumGpa.setText(String.format(java.util.Locale.US, "%.2f", cumGpa));
                     
-                    setupClassStandingChart(cumGpa, false);
+                    setupClassStandingChart(cumGpa, false, false);
                     
                     com.google.firebase.Timestamp semTime = validSem.getTimestamp("timestamp");
                     if (semTime != null && !predictionHistory.isEmpty()) {
@@ -494,7 +494,7 @@ public class StudentHomeActivity extends AppCompatActivity {
                     tvSemGpa.setText("INC");
                     tvCumGpa.setText("INC");
                     tvPredGpa.setText("0.00");
-                    setupClassStandingChart(0.0, true);
+                    setupClassStandingChart(0.0, true, false);
                 }
             }
         });
