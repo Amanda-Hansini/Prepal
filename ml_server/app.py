@@ -2,7 +2,7 @@ from flask import Flask, request, jsonify
 import os
 
 from gpa_calculator import calculate_gpa
-from ml_model import predict_returning_student, predict_new_student
+from ml_model import predict_model_a, predict_model_b, predict_model_c
 from ai_chatbot import generate_ai_chat_response
 
 app = Flask(__name__)
@@ -10,109 +10,120 @@ app = Flask(__name__)
 @app.route('/api/predict', methods=['POST'])
 def predict():
     try:
-        # 1. Get JSON data (Now only accepting JSON for manual entry)
         json_data = request.get_json(silent=True) or {}
         student_id = json_data.get('student_id')
-        student_type = json_data.get('student_type', 1) # 1: Returning, 2: New 1st Sem
+        student_type = int(json_data.get('student_type', 1)) # 1: Pre-Sem, 2: Mid-Sem (New), 3: Master Model
         
         print(f"[API] Prediction request for Student: {student_id}, Type: {student_type}")
         
         if not student_id:
             return jsonify({'error': 'student_id is required'}), 400
 
-        # 2. Extract Questionnaire Inputs
+        # --- 1. EXTRACT QUESTIONNAIRE INPUTS ---
         try:
             attendance = float(json_data.get('attendance', 0.0))
             study_hours = float(json_data.get('study_hours', 0.0))
             sleep_hours = float(json_data.get('sleep_hours', 0.0))
             stress_level = float(json_data.get('stress_level', 3.0))
+            cgpa = float(json_data.get('cgpa', 0.0))
         except ValueError:
             return jsonify({'error': 'Questionnaire inputs must be valid numbers'}), 400
 
-        # 3. Process Modules and GPA
         extracted_grades = json_data.get('results', [])
-        manual_gpa = json_data.get('gpa')
         
-        if not extracted_grades:
-            return jsonify({'error': 'No modules/results provided'}), 400
-        
-        sem_gpa = 0.0
-        calc_results = {'ab_modules': [], 'mc_modules': [], 'ne_modules': []}
-        
-        if student_type == 1:
-            # Model A (Returning student) needs previous GPA
-            if manual_gpa is not None:
-                calc_results['current_gpa'] = float(manual_gpa)
-            else:
-                calc_results = calculate_gpa(extracted_grades)
-            sem_gpa = calc_results.get('current_gpa', 0.0)
+        # --- 2. WARNING & ACKNOWLEDGEMENT ENGINE ---
+        acknowledgements_required = []
 
-        # 4. Handle 80% Attendance Rule Module-wise
-        module_attendances = json_data.get('module_attendances', {})
-        failed_modules = []
-        total_credits = 0
+        if cgpa > 0 and cgpa < 2.00:
+            acknowledgements_required.append(
+                "ACADEMIC WARNING: Your Cumulative GPA is dangerously low. You must score high this semester to avoid academic probation."
+            )
+
+        if attendance < 80.0:
+            acknowledgements_required.append(
+                "DANGER: Your attendance is below the 80% university requirement. You are at high risk of being barred from final exams."
+            )
+
+        total_credits = sum(float(mod.get('credits', 0)) for mod in extracted_grades)
+        if total_credits > 0:
+            min_study_hours = (total_credits * 50) / 15
+            if study_hours < min_study_hours:
+                acknowledgements_required.append(
+                    f"BY-LAW WARNING: You are studying {study_hours} hrs, which is less than the SLQF mandated minimum of {min_study_hours:.1f} hrs for {total_credits} credits. This mathematically lowers your predicted GPA."
+                )
+
+        if sleep_hours < 7 or sleep_hours > 9:
+            acknowledgements_required.append(
+                "HEALTH WARNING: You are deviating from the National Sleep Foundation's 7-9 hour standard, severely impacting cognitive performance and your ML predicted GPA."
+            )
+
+        if stress_level >= 4.0:
+            acknowledgements_required.append(
+                "HEALTH WARNING: Your stress levels are critically high. Consider utilizing campus counseling services to prevent severe academic burnout."
+            )
+
+        # --- 3. PROCESS CA MARKS (MID + ASSIGNMENT) ---
+        valid_mid_marks = []
+        valid_assg_marks = []
         failed_credits = 0
 
         for mod in extracted_grades:
-            mod_name = mod.get('moduleName', '')
-            try:
-                mod_credits = float(mod.get('credits', 0))
-            except ValueError:
-                mod_credits = 0
-            
-            total_credits += mod_credits
-            
-            if mod_name in module_attendances:
-                if module_attendances[mod_name] < 80.0:
-                    failed_modules.append(mod_name)
-                    failed_credits += mod_credits
+            mod_name = mod.get('moduleName', 'Unknown Module')
+            mod_credits = float(mod.get('credits', 0))
+            mid = float(mod.get('mid_mark', 0))
+            assg = float(mod.get('assignment_mark', 0))
 
-        # 5. Multiple Linear Regression Prediction
-        if student_type == 2:
-            ol_maths = json_data.get('ol_maths', 'F')
-            ol_english = json_data.get('ol_english', 'F')
-            predicted_gpa = predict_new_student(
-                ol_maths=ol_maths,
-                ol_english=ol_english,
-                attendance=attendance,
-                study_hours=study_hours,
-                sleep_hours=sleep_hours,
-                stress_level=stress_level
-            )
-        else:
-            predicted_gpa = predict_returning_student(
-                previous_gpa=sem_gpa, 
-                attendance=attendance,
-                study_hours=study_hours, 
-                sleep_hours=sleep_hours, 
-                stress_level=stress_level
-            )
+            ca_total = mid + assg
 
-        # 6. Apply Mathematical Penalty for failed modules
+            if ca_total < 8:
+                acknowledgements_required.append(
+                    f"DANGER: You scored {ca_total}/40 in {mod_name} continuous assessment. You are barred from the final exam! Speak to your lecturer immediately."
+                )
+                failed_credits += mod_credits
+            else:
+                if ca_total < 15:
+                    acknowledgements_required.append(
+                        f"NOTICE: Your CA marks ({ca_total}/40) for {mod_name} are borderline. You must score exceptionally high in the final exam to secure a good grade."
+                    )
+                valid_mid_marks.append(mid)
+                valid_assg_marks.append(assg)
+
+        # Calculate ML Averages for passed CA modules
+        avg_mid = sum(valid_mid_marks) / len(valid_mid_marks) if valid_mid_marks else 0.0
+        avg_assg = sum(valid_assg_marks) / len(valid_assg_marks) if valid_assg_marks else 0.0
+
+        # --- 4. MULTIPLE LINEAR REGRESSION PREDICTION ---
+        predicted_gpa = 0.0
+        
+        if student_type == 1:
+            predicted_gpa = predict_model_a(cgpa, attendance, study_hours, sleep_hours, stress_level)
+        elif student_type == 2:
+            predicted_gpa = predict_model_b(avg_mid, avg_assg, attendance, study_hours, sleep_hours, stress_level)
+        elif student_type == 3:
+            predicted_gpa = predict_model_c(cgpa, avg_mid, avg_assg, attendance, study_hours, sleep_hours, stress_level)
+        
+        # --- 5. APPLY PENALTIES FOR BARRED MODULES ---
         if total_credits > 0 and failed_credits > 0:
             passed_credits = total_credits - failed_credits
             adjusted_gpa = (predicted_gpa * passed_credits) / total_credits
             predicted_gpa = round(adjusted_gpa, 2)
-            
-            tip = f"WARNING: You are predicted to fail {', '.join(failed_modules)} due to <80% attendance. Adjusted predicted GPA is {predicted_gpa:.2f}."
             eligible = False
         else:
             eligible = True
-            # 7. Motivation Tip
-            if predicted_gpa >= 3.0: tip = "Excellent! You are on track for outstanding results. Keep it up!"
-            elif predicted_gpa >= 2.0: tip = "Good progress. Focus more on weak modules to reach your full potential."
-            else: tip = "Your predicted GPA is low. Organize a strict study schedule and seek academic help. You can improve!"
+            
+        # --- 6. MOTIVATION TIP ---
+        if predicted_gpa >= 3.0: tip = "Excellent! You are on track for outstanding results. Keep it up!"
+        elif predicted_gpa >= 2.0: tip = "Good progress. Focus more on weak modules to reach your full potential."
+        else: tip = "Your predicted GPA is low. Please review the acknowledgements and organize a strict study schedule."
 
         return jsonify({
             'student_id': student_id,
-            'extracted_grades': extracted_grades,
-            'semester_gpa': sem_gpa,
+            'student_type': student_type,
+            'semester_gpa': cgpa,
             'predicted_future_gpa': predicted_gpa,
             'motivation_tip': tip,
-            'ab_modules': calc_results.get('ab_modules', []),
-            'mc_modules': calc_results.get('mc_modules', []),
-            'ne_modules': calc_results.get('ne_modules', []),
-            'eligible': eligible
+            'eligible': eligible,
+            'acknowledgements_required': acknowledgements_required
         }), 200
 
     except Exception as e:

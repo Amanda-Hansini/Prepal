@@ -7,112 +7,77 @@ import os
 DATASET_PATH = "future_gpa_dataset_final.csv"
 MODEL_A_PATH = "gpa_model_a.pkl"
 MODEL_B_PATH = "gpa_model_b.pkl"
+MODEL_C_PATH = "gpa_model_c.pkl"
 
 def train_models():
-    """Trains both Model A and Model B Multiple Linear Regression models."""
+    """Trains Model A, Model B, and Model C Multiple Linear Regression models."""
     if not os.path.exists(DATASET_PATH):
         print(f"[Error] '{DATASET_PATH}' not found in the server directory.")
-        return None, None
+        return None, None, None
     
     try:
-        print(f"[AI Model] Loading dataset and training dual Multiple Linear Regression models...")
-        df = pd.read_csv(DATASET_PATH)
+        print(f"[AI Model] Loading dataset and training Tri-Model Lifecycle Suite...")
+        df = pd.read_csv(DATASET_PATH).dropna()
         
-        # Convert O/L letter grades to numbers if necessary
-        grade_mapping = {'A': 4, 'B': 3, 'C': 2, 'S': 1, 'W': 0, 'F': 0}
-        if df['OL_Maths'].dtype == object:
-            df['OL_Maths'] = df['OL_Maths'].map(grade_mapping).fillna(0)
-        if df['OL_English'].dtype == object:
-            df['OL_English'] = df['OL_English'].map(grade_mapping).fillna(0)
-        
-        # Features for Model A (Returning Students)
-        features_a = [
-            'Previous_GPA', 'Attendance_Percentage', 
-            'Study_Hours_Per_Week', 'Sleep_Hours_Per_Day', 
-            'Stress_Level'
-        ]
-        
-        # Features for Model B (New Students)
-        features_b = [
-            'OL_Maths', 'OL_English', 'Attendance_Percentage',
-            'Study_Hours_Per_Week', 'Sleep_Hours_Per_Day', 'Stress_Level'
-        ]
-        
+        features_a = ['Previous_GPA', 'Attendance_Percentage', 'Study_Hours_Per_Week', 'Sleep_Hours_Per_Day', 'Stress_Level']
+        features_b = ['Mid_Mark', 'Assignment_Mark', 'Attendance_Percentage', 'Study_Hours_Per_Week', 'Sleep_Hours_Per_Day', 'Stress_Level']
+        features_c = ['Previous_GPA', 'Mid_Mark', 'Assignment_Mark', 'Attendance_Percentage', 'Study_Hours_Per_Week', 'Sleep_Hours_Per_Day', 'Stress_Level']
         target = 'Future_GPA'
 
         # Train Model A
-        df_a = df.dropna(subset=features_a + [target])
-        X_a = df_a[features_a]
-        y_a = df_a[target]
+        X_a = df[features_a]
+        y_a = df[target]
         model_a = LinearRegression()
         model_a.fit(X_a, y_a)
         joblib.dump(model_a, MODEL_A_PATH)
         
         # Train Model B
-        df_b = df.dropna(subset=features_b + [target])
-        X_b = df_b[features_b]
-        y_b = df_b[target]
+        X_b = df[features_b]
+        y_b = df[target]
         model_b = LinearRegression()
         model_b.fit(X_b, y_b)
         joblib.dump(model_b, MODEL_B_PATH)
+
+        # Train Model C
+        X_c = df[features_c]
+        y_c = df[target]
+        model_c = LinearRegression()
+        model_c.fit(X_c, y_c)
+        joblib.dump(model_c, MODEL_C_PATH)
         
-        print("[AI Model] Model A and Model B trained and saved successfully.")
-        return model_a, model_b
+        print("[AI Model] Model A, Model B, and Model C trained and saved successfully.")
+        return model_a, model_b, model_c
         
     except Exception as e:
         print(f"Error training models: {e}")
-        return None, None
+        return None, None, None
 
-def predict_returning_student(previous_gpa, attendance, study_hours, sleep_hours, stress_level):
-    """Predicts future GPA using Model A (Previous GPA)."""
-    if not os.path.exists(MODEL_A_PATH):
-        model_a, _ = train_models()
-    else:
-        model_a = joblib.load(MODEL_A_PATH)
-        
-    if model_a is None:
-        return 0.0
+def predict_model_a(cgpa, attendance, study_hours, sleep_hours, stress_level):
+    if not os.path.exists(MODEL_A_PATH): model_a, _, _ = train_models()
+    else: model_a = joblib.load(MODEL_A_PATH)
+    if model_a is None: return 0.0
 
-    features = [
-        'Previous_GPA', 'Attendance_Percentage', 
-        'Study_Hours_Per_Week', 'Sleep_Hours_Per_Day', 
-        'Stress_Level'
-    ]
-    
-    student_data = pd.DataFrame([[
-        previous_gpa, attendance, study_hours, sleep_hours, stress_level
-    ]], columns=features)
+    student_data = pd.DataFrame([[cgpa, attendance, study_hours, sleep_hours, stress_level]], 
+                                columns=['Previous_GPA', 'Attendance_Percentage', 'Study_Hours_Per_Week', 'Sleep_Hours_Per_Day', 'Stress_Level'])
+    return round(np.clip(model_a.predict(student_data)[0], 0.0, 4.0), 2)
 
-    predicted_gpa = model_a.predict(student_data)[0]
-    return round(max(0.0, min(4.0, predicted_gpa)), 2)
+def predict_model_b(mid_mark, assignment_mark, attendance, study_hours, sleep_hours, stress_level):
+    if not os.path.exists(MODEL_B_PATH): _, model_b, _ = train_models()
+    else: model_b = joblib.load(MODEL_B_PATH)
+    if model_b is None: return 0.0
 
-def predict_new_student(ol_maths, ol_english, attendance, study_hours, sleep_hours, stress_level):
-    """Predicts future GPA using Model B (O/L Results)."""
-    if not os.path.exists(MODEL_B_PATH):
-        _, model_b = train_models()
-    else:
-        model_b = joblib.load(MODEL_B_PATH)
-        
-    if model_b is None:
-        return 0.0
+    student_data = pd.DataFrame([[mid_mark, assignment_mark, attendance, study_hours, sleep_hours, stress_level]], 
+                                columns=['Mid_Mark', 'Assignment_Mark', 'Attendance_Percentage', 'Study_Hours_Per_Week', 'Sleep_Hours_Per_Day', 'Stress_Level'])
+    return round(np.clip(model_b.predict(student_data)[0], 0.0, 4.0), 2)
 
-    # Ensure O/L grades are mapped to numbers
-    grade_mapping = {'A': 4, 'B': 3, 'C': 2, 'S': 1, 'W': 0, 'F': 0}
-    
-    ol_m_val = ol_maths if isinstance(ol_maths, (int, float)) else grade_mapping.get(str(ol_maths).upper(), 0)
-    ol_e_val = ol_english if isinstance(ol_english, (int, float)) else grade_mapping.get(str(ol_english).upper(), 0)
+def predict_model_c(cgpa, mid_mark, assignment_mark, attendance, study_hours, sleep_hours, stress_level):
+    if not os.path.exists(MODEL_C_PATH): _, _, model_c = train_models()
+    else: model_c = joblib.load(MODEL_C_PATH)
+    if model_c is None: return 0.0
 
-    features = [
-        'OL_Maths', 'OL_English', 'Attendance_Percentage',
-        'Study_Hours_Per_Week', 'Sleep_Hours_Per_Day', 'Stress_Level'
-    ]
-    
-    student_data = pd.DataFrame([[
-        ol_m_val, ol_e_val, attendance, study_hours, sleep_hours, stress_level
-    ]], columns=features)
-
-    predicted_gpa = model_b.predict(student_data)[0]
-    return round(max(0.0, min(4.0, predicted_gpa)), 2)
+    student_data = pd.DataFrame([[cgpa, mid_mark, assignment_mark, attendance, study_hours, sleep_hours, stress_level]], 
+                                columns=['Previous_GPA', 'Mid_Mark', 'Assignment_Mark', 'Attendance_Percentage', 'Study_Hours_Per_Week', 'Sleep_Hours_Per_Day', 'Stress_Level'])
+    return round(np.clip(model_c.predict(student_data)[0], 0.0, 4.0), 2)
 
 if __name__ == "__main__":
     train_models()
