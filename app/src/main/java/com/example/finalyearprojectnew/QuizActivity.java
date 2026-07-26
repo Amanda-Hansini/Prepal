@@ -45,7 +45,7 @@ public class QuizActivity extends AppCompatActivity {
     private int currentQuestionIndex = 0;
     private double currentGpa, cumulativeGpa;
     private List<Map<String, Object>> studentResults;
-    private String studentId, semesterName;
+    private String studentId, semesterName, programId, batchId;
     private int targetStudyHours = 0;
 
     private List<String> questions = new ArrayList<>();
@@ -83,15 +83,96 @@ public class QuizActivity extends AppCompatActivity {
         currentGpa = getIntent().getDoubleExtra("semesterGpa", 0.0);
         studentResults = (List<Map<String, Object>>) getIntent().getSerializableExtra("results");
         semesterName = getIntent().getStringExtra("semesterName");
+        programId = getIntent().getStringExtra("programId");
+        batchId = getIntent().getStringExtra("batchId");
         studentId = getSharedPreferences("UserSession", MODE_PRIVATE).getString("student_id", "Unknown");
 
-        buildQuestionsList();
         initViews();
         setupListeners();
-        updateQuestion();
+
+        if (studentResults != null && !studentResults.isEmpty()) {
+            buildQuestionsList();
+            populateDynamicAttendanceList();
+            quizProgress.setMax(questions.size());
+            updateQuestion();
+        } else {
+            fetchModulesFromDatabase();
+        }
+    }
+
+    private void fetchModulesFromDatabase() {
+        android.app.ProgressDialog dialog = new android.app.ProgressDialog(this);
+        dialog.setMessage("Loading Semester Modules...");
+        dialog.setCancelable(false);
+        dialog.show();
+
+        if (batchId == null) batchId = "";
+        
+        if (programId == null || programId.trim().isEmpty()) {
+            programId = "BIT";
+        }
+        if (semesterName == null || semesterName.trim().isEmpty()) {
+            semesterName = "SEM01";
+        }
+
+        final String finalBatchId = batchId;
+
+        com.google.firebase.firestore.FirebaseFirestore.getInstance().collection("Degrees").document(programId)
+                .collection("Modules")
+                .whereEqualTo("semesterId", semesterName)
+                .get()
+                .addOnSuccessListener(queryDocumentSnapshots -> {
+                    dialog.dismiss();
+                    if (!queryDocumentSnapshots.isEmpty()) {
+                        List<Map<String, Object>> allModules = new ArrayList<>();
+                        List<Map<String, Object>> matchingModules = new ArrayList<>();
+
+                        for (com.google.firebase.firestore.DocumentSnapshot doc : queryDocumentSnapshots) {
+                            Map<String, Object> data = doc.getData();
+                            if (data != null) {
+                                allModules.add(data);
+                                String semBatchId = (String) data.get("batchId");
+                                String semBatchName = (String) data.get("batchName");
+                                if (!finalBatchId.isEmpty()) {
+                                    if (finalBatchId.equalsIgnoreCase(semBatchId) || finalBatchId.equalsIgnoreCase(semBatchName)) {
+                                        matchingModules.add(data);
+                                    }
+                                }
+                            }
+                        }
+
+                        List<Map<String, Object>> modulesToUse = !matchingModules.isEmpty() ? matchingModules : allModules;
+
+                        studentResults = modulesToUse;
+                        buildQuestionsList();
+                        populateDynamicAttendanceList();
+                        quizProgress.setMax(questions.size());
+                        updateQuestion();
+                    } else {
+                        android.widget.Toast.makeText(this, "No modules found for " + semesterName, android.widget.Toast.LENGTH_LONG).show();
+                        buildQuestionsList();
+                        populateDynamicAttendanceList();
+                        quizProgress.setMax(questions.size());
+                        updateQuestion();
+                    }
+                })
+                .addOnFailureListener(e -> {
+                    dialog.dismiss();
+                    android.widget.Toast.makeText(this, "Failed to load modules: " + e.getMessage(), android.widget.Toast.LENGTH_LONG).show();
+                    buildQuestionsList();
+                    populateDynamicAttendanceList();
+                    quizProgress.setMax(questions.size());
+                    updateQuestion();
+                });
     }
 
     private void buildQuestionsList() {
+        questions.clear();
+        contexts.clear();
+        questionTypes.clear();
+        answers.clear();
+        moduleNamesForAttendance.clear();
+        moduleDisplayNamesForAttendance.clear();
         int totalCredits = 0;
         
         // Populate module names for attendance
@@ -133,26 +214,25 @@ public class QuizActivity extends AppCompatActivity {
         answers.add(0.0); // Placeholder
         
         int totalNotionalHours = totalCredits * 50;
-        int weeklyStudyTarget = totalNotionalHours / 15; // standard 15 week semester
+        int studyHoursPerWeek = (int) Math.round((totalNotionalHours * 0.30) / 15.0);
+        if (studyHoursPerWeek <= 0) studyHoursPerWeek = 10;
+        targetStudyHours = studyHoursPerWeek;
 
-        // Store target for later so we can save it to history
-        this.targetStudyHours = weeklyStudyTarget;
-
-        // Step 2: Study Hours
+        // Step 2: Numeric (Study Hours)
         questions.add("How many hours per week do you realistically commit to focused self-study?");
-        contexts.add("Based on SLQF, your " + totalCredits + " registered credits require " + totalNotionalHours + " notional hours. This equals roughly " + weeklyStudyTarget + " hours of self-study per week.");
-        questionTypes.add(1);
-        answers.add(0.0);
-
-        // Step 3: Sleep
-        questions.add("On average, how many hours of consistent, uninterrupted sleep do you get per night?");
-        contexts.add("Research indicates that memory consolidation degrades significantly if sleep schedules are restricted or highly erratic.");
+        contexts.add("Based on your course load (" + totalCredits + " credits), we recommend aiming for at least " + targetStudyHours + " hours per week.");
         questionTypes.add(1);
         answers.add(0.0);
         
-        // Step 4: PSS-10 (Dynamic List)
+        // Step 3: Numeric (Sleep Hours)
+        questions.add("On average, how many hours of consistent, uninterrupted sleep do you get per night?");
+        contexts.add("Adequate sleep (7-9 hours) is vital for cognitive retention, academic performance, and overall well-being.");
+        questionTypes.add(1);
+        answers.add(0.0);
+        
+        // Step 4: PSS-10
         questions.add("Perceived Stress Scale (PSS-10)");
-        contexts.add("Please answer the following questions based on your feelings in the last month.");
+        contexts.add("Please answer the following 10 questions to evaluate your stress level over the last month.");
         questionTypes.add(3);
         answers.add(0.0);
     }
@@ -175,8 +255,7 @@ public class QuizActivity extends AppCompatActivity {
         btnPrev = findViewById(R.id.btnPrev);
         btnNext = findViewById(R.id.btnNext);
         
-        quizProgress.setMax(questions.size());
-        populateDynamicAttendanceList();
+        quizProgress.setMax(4);
         populateDynamicPssList();
     }
 
@@ -366,7 +445,16 @@ public class QuizActivity extends AppCompatActivity {
         request.sleepHours = sleepHours;
         request.stressLevel = mappedStressLevel;
         request.gpa = currentGpa; 
+        request.cgpa = cumulativeGpa;
         request.results = studentResults;
+
+        if (cumulativeGpa > 0 && studentResults != null && !studentResults.isEmpty()) {
+            request.studentType = 3; // Model C: Comprehensive Master
+        } else if (cumulativeGpa > 0) {
+            request.studentType = 1; // Model A: Pre-Semester Baseline
+        } else {
+            request.studentType = 2; // Model B: Mid-Semester Fresher
+        }
 
         RetrofitClient.getApiService().predictGpa(request).enqueue(new Callback<PredictionResponse>() {
             @Override
@@ -390,22 +478,7 @@ public class QuizActivity extends AppCompatActivity {
     private void saveToHistoryAndNavigate(PredictionResponse response, PredictionRequest requestData) {
         FirebaseFirestore db = FirebaseFirestore.getInstance();
         
-        // 1. Save Semester Results to HISTORY
-        Map<String, Object> semesterData = new HashMap<>();
-        semesterData.put("semesterName", semesterName);
-        semesterData.put("semesterGpa", response.semesterGpa);
-        semesterData.put("modules", requestData.results);
-        semesterData.put("timestamp", com.google.firebase.Timestamp.now());
-        semesterData.put("abModules", response.abModules);
-        semesterData.put("mcModules", response.mcModules);
-        semesterData.put("neModules", response.neModules);
-        semesterData.put("isPredictionOnly", false);
-
-        db.collection("AllStudents").document(studentId)
-                .collection("SemesterResults").document(semesterName)
-                .set(semesterData);
-
-        // 2. Save Prediction Snapshot (Structured under Student ID)
+        // Save Prediction Snapshot (Structured under Student ID)
         Map<String, Object> historyData = new HashMap<>();
         historyData.put("studentId", studentId);
         historyData.put("timestamp", com.google.firebase.Timestamp.now());
@@ -423,21 +496,26 @@ public class QuizActivity extends AppCompatActivity {
         historyData.put("sleepHours", requestData.sleepHours);
         historyData.put("stressLevel", requestData.stressLevel); // 1-5 scale
         historyData.put("pssScore", pssTotalScore); // Raw 0-40 scale
+        historyData.put("acknowledgementsRequired", response.acknowledgementsRequired);
 
         db.collection("AllStudents").document(studentId)
                 .collection("PredictionHistory").add(historyData)
                 .addOnSuccessListener(documentReference -> {
                     db.collection("AllStudents").document(studentId).update("resultsEntered", true);
                     
-                    Intent intent = new Intent(QuizActivity.this, StudentHomeActivity.class);
-                    intent.setFlags(Intent.FLAG_ACTIVITY_NEW_TASK | Intent.FLAG_ACTIVITY_CLEAR_TASK);
-                    startActivity(intent);
-                    finish();
+                    AcknowledgementDialogHelper.showWarningDialog(QuizActivity.this, response.acknowledgementsRequired, () -> {
+                        Intent intent = new Intent(QuizActivity.this, StudentHomeActivity.class);
+                        intent.setFlags(Intent.FLAG_ACTIVITY_NEW_TASK | Intent.FLAG_ACTIVITY_CLEAR_TASK);
+                        startActivity(intent);
+                        finish();
+                    });
                 })
                 .addOnFailureListener(e -> {
                     Toast.makeText(this, "Failed to persist data", Toast.LENGTH_SHORT).show();
-                    startActivity(new Intent(QuizActivity.this, StudentHomeActivity.class));
-                    finish();
+                    AcknowledgementDialogHelper.showWarningDialog(QuizActivity.this, response.acknowledgementsRequired, () -> {
+                        startActivity(new Intent(QuizActivity.this, StudentHomeActivity.class));
+                        finish();
+                    });
                 });
     }
 }

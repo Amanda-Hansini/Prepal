@@ -148,6 +148,20 @@
                     android:textStyle="bold"/>
             </LinearLayout>
 
+            <!-- Dynamic Content for Continuous Assessment (Mid + Assignment) Marks -->
+            <ScrollView
+                android:id="@+id/svCaMarks"
+                android:layout_width="match_parent"
+                android:layout_height="250dp"
+                android:visibility="gone">
+                <LinearLayout
+                    android:id="@+id/llCaMarks"
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    android:orientation="vertical"
+                    android:paddingTop="8dp"/>
+            </ScrollView>
+
             <!-- Dynamic Content for Attendance List -->
             <ScrollView
                 android:id="@+id/svAttendance"
@@ -174,48 +188,6 @@
                     android:layout_height="wrap_content"
                     android:orientation="vertical"
                     android:paddingTop="8dp"/>
-            </ScrollView>
-
-            <!-- Content for O/L Grades -->
-            <ScrollView
-                android:id="@+id/svOLGrades"
-                android:layout_width="match_parent"
-                android:layout_height="wrap_content"
-                android:visibility="gone">
-                <LinearLayout
-                    android:layout_width="match_parent"
-                    android:layout_height="wrap_content"
-                    android:orientation="vertical"
-                    android:paddingTop="8dp">
-                    
-                    <TextView
-                        android:layout_width="match_parent"
-                        android:layout_height="wrap_content"
-                        android:text="O/L Mathematics Grade"
-                        android:textSize="16sp"
-                        android:textColor="@color/textColorPrimary"
-                        android:layout_marginBottom="8dp"/>
-                    <Spinner
-                        android:id="@+id/spinnerOlMaths"
-                        android:layout_width="match_parent"
-                        android:layout_height="48dp"
-                        android:background="@drawable/bg_rounded_input"
-                        android:layout_marginBottom="16dp"/>
-
-                    <TextView
-                        android:layout_width="match_parent"
-                        android:layout_height="wrap_content"
-                        android:text="O/L English Grade"
-                        android:textSize="16sp"
-                        android:textColor="@color/textColorPrimary"
-                        android:layout_marginBottom="8dp"/>
-                    <Spinner
-                        android:id="@+id/spinnerOlEnglish"
-                        android:layout_width="match_parent"
-                        android:layout_height="48dp"
-                        android:background="@drawable/bg_rounded_input"
-                        android:layout_marginBottom="16dp"/>
-                </LinearLayout>
             </ScrollView>
 
         </LinearLayout>

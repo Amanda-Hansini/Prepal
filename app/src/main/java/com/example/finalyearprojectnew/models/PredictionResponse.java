@@ -34,4 +34,7 @@ public class PredictionResponse {
 
     @SerializedName("extracted_grades")
     public List<Map<String, Object>> extractedGrades;
+
+    @SerializedName("acknowledgements_required")
+    public List<String> acknowledgementsRequired;
 }

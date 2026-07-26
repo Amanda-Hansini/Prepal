@@ -37,9 +37,10 @@ public class FirstSemesterQuizActivity extends AppCompatActivity {
     private TextView tvQuestionCount, tvQuestionText, tvQuestionContext, tvRatingValue, tvLabelStart, tvLabelEnd;
     private ProgressBar quizProgress;
     private EditText etQuizInput;
-    private LinearLayout llRatingContainer, llAttendance, llPss;
-    private ScrollView svAttendance, svPss, svOLGrades;
-    private Spinner spinnerOlMaths, spinnerOlEnglish;
+    private LinearLayout llRatingContainer, llAttendance, llPss, llCaMarks;
+    private ScrollView svAttendance, svPss, svCaMarks;
+    private List<EditText> midMarkInputs = new ArrayList<>();
+    private List<EditText> assgMarkInputs = new ArrayList<>();
     private SeekBar seekBarRating;
     private AppCompatButton btnPrev, btnNext;
 
@@ -135,6 +136,7 @@ public class FirstSemesterQuizActivity extends AppCompatActivity {
 
                         studentResults = modulesToUse;
                         buildQuestionsList();
+                        populateDynamicCaMarksList();
                         populateDynamicAttendanceList();
                         updateQuestion();
                     } else {
@@ -182,11 +184,11 @@ public class FirstSemesterQuizActivity extends AppCompatActivity {
             }
         }
         
-        // Step 1: O/L Grades
-        questions.add("Enter your Ordinary Level (O/L) Grades:");
-        contexts.add("Your past academic performance in core subjects helps predict your initial university performance.");
-        questionTypes.add(4); // 4 = O/L Grades
-        answers.add(0.0);
+        // Step 1: Continuous Assessment Marks (Dynamic List: Midterm + Assignment)
+        questions.add("Enter your Midterm & Assignment marks for each module:");
+        contexts.add("Continuous Assessment (CA = Midterm /20 + Assignment /20 = /40) makes up 40% of your final grade. A CA total below 8/40 bars you from the final exam.");
+        questionTypes.add(5);
+        answers.add(0.0); // Placeholder
 
         // Step 2: Attendance (Dynamic List)
         questions.add("Select your target attendance for each module:");
@@ -236,18 +238,32 @@ public class FirstSemesterQuizActivity extends AppCompatActivity {
         llAttendance = findViewById(R.id.llAttendance);
         svPss = findViewById(R.id.svPss);
         llPss = findViewById(R.id.llPss);
-        svOLGrades = findViewById(R.id.svOLGrades);
-        spinnerOlMaths = findViewById(R.id.spinnerOlMaths);
-        spinnerOlEnglish = findViewById(R.id.spinnerOlEnglish);
+        svCaMarks = findViewById(R.id.svCaMarks);
+        llCaMarks = findViewById(R.id.llCaMarks);
         btnPrev = findViewById(R.id.btnPrev);
         btnNext = findViewById(R.id.btnNext);
-        
-        String[] grades = {"A", "B", "C", "S", "W", "F"};
-        ArrayAdapter<String> gradeAdapter = new ArrayAdapter<>(this, android.R.layout.simple_spinner_dropdown_item, grades);
-        spinnerOlMaths.setAdapter(gradeAdapter);
-        spinnerOlEnglish.setAdapter(gradeAdapter);
 
         populateDynamicPssList();
+    }
+
+    private void populateDynamicCaMarksList() {
+        llCaMarks.removeAllViews();
+        midMarkInputs.clear();
+        assgMarkInputs.clear();
+        LayoutInflater inflater = LayoutInflater.from(this);
+
+        for (String displayName : moduleDisplayNamesForAttendance) {
+            View itemView = inflater.inflate(R.layout.item_module_ca_marks, llCaMarks, false);
+            TextView tvModuleNameCa = itemView.findViewById(R.id.tvModuleNameCa);
+            EditText etMidMark = itemView.findViewById(R.id.etMidMark);
+            EditText etAssignmentMark = itemView.findViewById(R.id.etAssignmentMark);
+
+            tvModuleNameCa.setText(displayName);
+
+            midMarkInputs.add(etMidMark);
+            assgMarkInputs.add(etAssignmentMark);
+            llCaMarks.addView(itemView);
+        }
     }
 
     private void populateDynamicAttendanceList() {
@@ -327,34 +343,34 @@ public class FirstSemesterQuizActivity extends AppCompatActivity {
         quizProgress.setProgress(currentQuestionIndex + 1);
 
         int type = questionTypes.get(currentQuestionIndex);
-        if (type == 0) {
+        if (type == 5) {
+            // Dynamic List (Continuous Assessment: Midterm + Assignment)
+            etQuizInput.setVisibility(View.GONE);
+            llRatingContainer.setVisibility(View.GONE);
+            svAttendance.setVisibility(View.GONE);
+            svPss.setVisibility(View.GONE);
+            svCaMarks.setVisibility(View.VISIBLE);
+        } else if (type == 0) {
             // Dynamic List (Attendance)
             etQuizInput.setVisibility(View.GONE);
             llRatingContainer.setVisibility(View.GONE);
             svPss.setVisibility(View.GONE);
-            svOLGrades.setVisibility(View.GONE);
+            svCaMarks.setVisibility(View.GONE);
             svAttendance.setVisibility(View.VISIBLE);
         } else if (type == 3) {
             // Dynamic List (PSS-10)
             etQuizInput.setVisibility(View.GONE);
             llRatingContainer.setVisibility(View.GONE);
             svAttendance.setVisibility(View.GONE);
-            svOLGrades.setVisibility(View.GONE);
+            svCaMarks.setVisibility(View.GONE);
             svPss.setVisibility(View.VISIBLE);
-        } else if (type == 4) {
-            // O/L Grades
-            etQuizInput.setVisibility(View.GONE);
-            llRatingContainer.setVisibility(View.GONE);
-            svAttendance.setVisibility(View.GONE);
-            svPss.setVisibility(View.GONE);
-            svOLGrades.setVisibility(View.VISIBLE);
         } else {
             // Numeric Input (Study Hours, Sleep Hours)
             etQuizInput.setVisibility(View.VISIBLE);
             llRatingContainer.setVisibility(View.GONE);
             svAttendance.setVisibility(View.GONE);
             svPss.setVisibility(View.GONE);
-            svOLGrades.setVisibility(View.GONE);
+            svCaMarks.setVisibility(View.GONE);
             double ans = answers.get(currentQuestionIndex);
             etQuizInput.setText(ans > 0 ? String.valueOf(ans) : "");
             etQuizInput.requestFocus();
@@ -377,7 +393,30 @@ public class FirstSemesterQuizActivity extends AppCompatActivity {
     private boolean saveAnswer() {
         try {
             int type = questionTypes.get(currentQuestionIndex);
-            if (type == 0) {
+            if (type == 5) {
+                // Save from CA Marks inputs into studentResults
+                for (int i = 0; i < studentResults.size(); i++) {
+                    String midStr = i < midMarkInputs.size() ? midMarkInputs.get(i).getText().toString().trim() : "0";
+                    String assgStr = i < assgMarkInputs.size() ? assgMarkInputs.get(i).getText().toString().trim() : "0";
+                    double midMark = midStr.isEmpty() ? 0.0 : Double.parseDouble(midStr);
+                    double assgMark = assgStr.isEmpty() ? 0.0 : Double.parseDouble(assgStr);
+
+                    if (midMark < 0 || midMark > 20) {
+                        Toast.makeText(this, "Midterm mark for module " + (i+1) + " must be between 0 and 20", Toast.LENGTH_SHORT).show();
+                        return false;
+                    }
+                    if (assgMark < 0 || assgMark > 20) {
+                        Toast.makeText(this, "Assignment mark for module " + (i+1) + " must be between 0 and 20", Toast.LENGTH_SHORT).show();
+                        return false;
+                    }
+
+                    Map<String, Object> mod = studentResults.get(i);
+                    mod.put("mid_mark", midMark);
+                    mod.put("midMark", midMark);
+                    mod.put("assignment_mark", assgMark);
+                    mod.put("assignmentMark", assgMark);
+                }
+            } else if (type == 0) {
                 // Save from Attendance Spinners into map
                 for (int i = 0; i < moduleNamesForAttendance.size(); i++) {
                     double pct = mapDropdownToPercentage(attendanceSpinners.get(i).getSelectedItemPosition());
@@ -440,21 +479,21 @@ public class FirstSemesterQuizActivity extends AppCompatActivity {
         else if (pssTotalScore <= 32) mappedStressLevel = 4.0;
         else mappedStressLevel = 5.0;
 
-        String olMaths = spinnerOlMaths.getSelectedItem().toString();
-        String olEnglish = spinnerOlEnglish.getSelectedItem().toString();
-
         PredictionRequest request = new PredictionRequest();
         request.studentId = studentId;
         request.attendance = avgAttendance; 
         request.moduleAttendances = moduleAttendances;
         request.studyHours = studyHours;
         request.sleepHours = sleepHours;
-        request.stressLevel = mappedStressLevel;
-        request.gpa = 0.0; // 0 for first semester
+        double passedCgpa = getIntent().getDoubleExtra("cumulativeGpa", 0.0);
+        int passedStudentType = getIntent().getIntExtra("studentType", 2);
+
+        request.gpa = passedCgpa;
+        request.cgpa = passedCgpa;
         request.results = studentResults;
-        request.studentType = 2; // New 1st semester student
-        request.olMaths = olMaths;
-        request.olEnglish = olEnglish;
+        request.studentType = passedStudentType;
+        request.olMaths = "";
+        request.olEnglish = "";
 
         RetrofitClient.getApiService().predictGpa(request).enqueue(new Callback<PredictionResponse>() {
             @Override
@@ -477,23 +516,8 @@ public class FirstSemesterQuizActivity extends AppCompatActivity {
 
     private void saveToHistoryAndNavigate(PredictionResponse response, PredictionRequest requestData) {
         FirebaseFirestore db = FirebaseFirestore.getInstance();
-        
-        // 1. Save Semester Results to HISTORY
-        Map<String, Object> semesterData = new HashMap<>();
-        semesterData.put("semesterName", semesterName);
-        semesterData.put("semesterGpa", response.semesterGpa);
-        semesterData.put("modules", requestData.results);
-        semesterData.put("timestamp", com.google.firebase.Timestamp.now());
-        semesterData.put("abModules", response.abModules);
-        semesterData.put("mcModules", response.mcModules);
-        semesterData.put("neModules", response.neModules);
-        semesterData.put("isPredictionOnly", true);
 
-        db.collection("AllStudents").document(studentId)
-                .collection("SemesterResults").document(semesterName)
-                .set(semesterData);
-
-        // 2. Save Prediction Snapshot (Structured under Student ID)
+        // Save Prediction Snapshot (Structured under Student ID)
         Map<String, Object> historyData = new HashMap<>();
         historyData.put("studentId", studentId);
         historyData.put("timestamp", com.google.firebase.Timestamp.now());
@@ -511,21 +535,26 @@ public class FirstSemesterQuizActivity extends AppCompatActivity {
         historyData.put("sleepHours", requestData.sleepHours);
         historyData.put("stressLevel", requestData.stressLevel); // 1-5 scale
         historyData.put("pssScore", pssTotalScore); // Raw 0-40 scale
+        historyData.put("acknowledgementsRequired", response.acknowledgementsRequired);
 
         db.collection("AllStudents").document(studentId)
                 .collection("PredictionHistory").add(historyData)
                 .addOnSuccessListener(documentReference -> {
                     db.collection("AllStudents").document(studentId).update("resultsEntered", true);
                     
-                    Intent intent = new Intent(FirstSemesterQuizActivity.this, StudentHomeActivity.class);
-                    intent.setFlags(Intent.FLAG_ACTIVITY_NEW_TASK | Intent.FLAG_ACTIVITY_CLEAR_TASK);
-                    startActivity(intent);
-                    finish();
+                    AcknowledgementDialogHelper.showWarningDialog(FirstSemesterQuizActivity.this, response.acknowledgementsRequired, () -> {
+                        Intent intent = new Intent(FirstSemesterQuizActivity.this, StudentHomeActivity.class);
+                        intent.setFlags(Intent.FLAG_ACTIVITY_NEW_TASK | Intent.FLAG_ACTIVITY_CLEAR_TASK);
+                        startActivity(intent);
+                        finish();
+                    });
                 })
                 .addOnFailureListener(e -> {
                     Toast.makeText(this, "Failed to persist data", Toast.LENGTH_SHORT).show();
-                    startActivity(new Intent(FirstSemesterQuizActivity.this, StudentHomeActivity.class));
-                    finish();
+                    AcknowledgementDialogHelper.showWarningDialog(FirstSemesterQuizActivity.this, response.acknowledgementsRequired, () -> {
+                        startActivity(new Intent(FirstSemesterQuizActivity.this, StudentHomeActivity.class));
+                        finish();
+                    });
                 });
     }
 }

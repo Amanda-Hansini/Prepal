@@ -619,12 +619,39 @@ public class ManualResultEntryActivity extends AppCompatActivity {
                 saveFirstSemesterIncompleteAndBlock(results, semesterName);
             } else {
                 android.util.Log.d("MANUAL_DEBUG", "Sending results size: " + results.size());
-                Intent intent = new Intent(this, QuizActivity.class);
-                intent.putExtra("cumulativeGpa", cumulativeGpa);
-                intent.putExtra("semesterGpa", currentGpa);
-                intent.putExtra("results", (java.io.Serializable) results);
-                intent.putExtra("semesterName", semesterName);
-                startActivity(intent);
+                saveSemesterResultsToFirestore(results, semesterName, currentGpa);
+                
+                boolean isModelCNext = getIntent().getBooleanExtra("nextStepModelC", false);
+                if (isModelCNext) {
+                    Intent intent = new Intent(this, FirstSemesterQuizActivity.class);
+                    String docId = getIntent().getStringExtra("firstSemDocId");
+                    if (docId != null) intent.putExtra("semesterDocId", docId);
+                    String semName = getIntent().getStringExtra("firstSemName");
+                    intent.putExtra("semesterName", (semName != null && !semName.trim().isEmpty()) ? semName : "SEM02");
+                    String pId = getIntent().getStringExtra("programId");
+                    intent.putExtra("programId", (pId != null && !pId.trim().isEmpty()) ? pId : "BIT");
+                    String bId = getIntent().getStringExtra("batchId");
+                    if (bId != null) intent.putExtra("batchId", bId);
+                    
+                    intent.putExtra("cumulativeGpa", cumulativeGpa);
+                    intent.putExtra("studentType", 3);
+                    startActivity(intent);
+                } else {
+                    Intent intent = new Intent(this, QuizActivity.class);
+                    String docId = getIntent().getStringExtra("firstSemDocId");
+                    if (docId != null) intent.putExtra("semesterDocId", docId);
+                    String semName = getIntent().getStringExtra("firstSemName");
+                    intent.putExtra("semesterName", (semName != null && !semName.trim().isEmpty()) ? semName : "SEM02");
+                    String pId = getIntent().getStringExtra("programId");
+                    intent.putExtra("programId", (pId != null && !pId.trim().isEmpty()) ? pId : "BIT");
+                    String bId = getIntent().getStringExtra("batchId");
+                    if (bId != null) intent.putExtra("batchId", bId);
+
+                    intent.putExtra("cumulativeGpa", cumulativeGpa);
+                    intent.putExtra("semesterGpa", currentGpa);
+                    intent.putExtra("results", new java.util.ArrayList<Map<String, Object>>());
+                    startActivity(intent);
+                }
             }
         });
 
@@ -648,6 +675,28 @@ public class ManualResultEntryActivity extends AppCompatActivity {
             });
             return sorted.get(0).getId().equals(currentSemesterName);
         }
+    }
+
+    private void saveSemesterResultsToFirestore(List<Map<String, Object>> resultsToSave, String semName, double semGpa) {
+        if (studentId == null || studentId.trim().isEmpty()) return;
+
+        Map<String, Object> semesterData = new HashMap<>();
+        semesterData.put("semesterName", semName);
+        semesterData.put("semesterGpa", semGpa);
+        semesterData.put("modules", resultsToSave);
+        semesterData.put("timestamp", com.google.firebase.Timestamp.now());
+        semesterData.put("isPredictionOnly", false);
+
+        db.collection("AllStudents").document(studentId)
+                .collection("SemesterResults").document(semName)
+                .set(semesterData)
+                .addOnSuccessListener(aVoid -> {
+                    db.collection("AllStudents").document(studentId).update("resultsEntered", true);
+                    android.util.Log.d("MANUAL_SAVE", "SemesterResults saved for " + semName);
+                })
+                .addOnFailureListener(e -> {
+                    android.util.Log.e("MANUAL_SAVE", "Failed to save SemesterResults: " + e.getMessage());
+                });
     }
 
     private void saveFirstSemesterIncompleteAndBlock(List<Map<String, Object>> results, String semesterName) {
@@ -760,7 +809,7 @@ public class ManualResultEntryActivity extends AppCompatActivity {
         for (Map<String, Object> mod : modules) {
             Object gp = mod.get("grade_point");
             String grade = (String) mod.get("grade");
-            if (gp != null || (grade != null && !grade.trim().isEmpty())) {
+            if (gp != null || (grade != null && !grade.trim().isEmpty() && !grade.equals("N/A") && !grade.equals("INC"))) {
                 return true;
             }
         }

@@ -146,6 +146,25 @@ public class PerformanceReportActivity extends AppCompatActivity {
                 .addOnSuccessListener(queryDocumentSnapshots -> {
                     reportItems.clear();
                     for (DocumentSnapshot doc : queryDocumentSnapshots) {
+                        Boolean isPredictionOnly = doc.getBoolean("isPredictionOnly");
+                        if (isPredictionOnly != null && isPredictionOnly) {
+                            continue; // Skip dummy prediction-only records
+                        }
+
+                        List<Map<String, Object>> modules = (List<Map<String, Object>>) doc.get("modules");
+                        boolean hasActualGrades = false;
+                        if (modules != null) {
+                            for (Map<String, Object> mod : modules) {
+                                if (mod.get("grade_point") != null || (mod.get("grade") != null && !"N/A".equals(mod.get("grade")))) {
+                                    hasActualGrades = true;
+                                    break;
+                                }
+                            }
+                        }
+                        if (!hasActualGrades) {
+                            continue; // Skip semesters without actual final grade records
+                        }
+
                         String name = doc.getString("semesterName");
                         String year = doc.getString("semesterYear");
                         String docId = doc.getId(); // This is the semesterName
@@ -156,7 +175,6 @@ public class PerformanceReportActivity extends AppCompatActivity {
                         // Add Header
                         reportItems.add(new ReportItem(header + " results", docId));
                         
-                        List<Map<String, Object>> modules = (List<Map<String, Object>>) doc.get("modules");
                         if (modules != null) {
                             for (Map<String, Object> mod : modules) {
                                 reportItems.add(new ReportItem(mod));

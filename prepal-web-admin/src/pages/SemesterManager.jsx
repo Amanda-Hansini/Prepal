@@ -7,6 +7,17 @@ import { db } from '../firebase';
 import { logActivity } from '../utils/activityLogger';
 import ConfirmModal from '../components/ConfirmModal';
 
+const getSemesterStatus = (sem) => {
+  if (sem.status) return sem.status;
+  if (!sem.startDate || !sem.endDate || sem.startDate === 'Not Set' || sem.endDate === 'Not Set' || sem.startDate === '' || sem.endDate === '') return 'Inactive';
+  const today = new Date();
+  const sDate = new Date(sem.startDate);
+  const eDate = new Date(sem.endDate);
+  if (today >= sDate && today <= eDate) return 'Active';
+  if (today > eDate) return 'Completed';
+  return 'Inactive';
+};
+
 const SemesterManager = ({ setPage }) => {
   const [semesters, setSemesters] = useState([]);
   const [loading, setLoading] = useState(true);
@@ -77,7 +88,8 @@ const SemesterManager = ({ setPage }) => {
         academicYear: editingSemData.academicYear,
         semesterNo: editingSemData.semesterNo,
         startDate: editingSemData.startDate || '',
-        endDate: editingSemData.endDate || ''
+        endDate: editingSemData.endDate || '',
+        status: editingSemData.status || getSemesterStatus(editingSemData)
       };
 
       // Since semesters are inside a subcollection Degrees/{degreeId}/Semesters/{docId}
@@ -202,19 +214,20 @@ const SemesterManager = ({ setPage }) => {
                 <th>Semester Name</th>
                 <th>Start Date</th>
                 <th>End Date</th>
+                <th>Status</th>
                 <th>Actions</th>
               </tr>
             </thead>
             <tbody>
               {loading ? (
                 <tr>
-                  <td colSpan="7" style={{ textAlign: 'center', padding: '40px', color: 'var(--text-muted)' }}>
+                  <td colSpan="8" style={{ textAlign: 'center', padding: '40px', color: 'var(--text-muted)' }}>
                     Loading Semesters...
                   </td>
                 </tr>
               ) : currentSemesters.length === 0 ? (
                 <tr>
-                  <td colSpan="7" style={{ textAlign: 'center', padding: '40px', color: 'var(--text-muted)' }}>
+                  <td colSpan="8" style={{ textAlign: 'center', padding: '40px', color: 'var(--text-muted)' }}>
                     No semesters found.
                   </td>
                 </tr>
@@ -240,6 +253,18 @@ const SemesterManager = ({ setPage }) => {
                       </td>
                       <td>
                         <input type="date" className="form-input" style={{padding: '4px', fontSize: '0.9rem'}} value={editingSemData.endDate || ''} onChange={e => setEditingSemData({...editingSemData, endDate: e.target.value})} />
+                      </td>
+                      <td>
+                        <select
+                          className="form-input"
+                          style={{ padding: '4px', fontSize: '0.85rem', width: '110px' }}
+                          value={editingSemData.status || getSemesterStatus(sem)}
+                          onChange={e => setEditingSemData({ ...editingSemData, status: e.target.value })}
+                        >
+                          <option value="Active">Active</option>
+                          <option value="Inactive">Inactive</option>
+                          <option value="Completed">Completed</option>
+                        </select>
                       </td>
                       <td>
                         <div style={{ display: 'flex', gap: '8px' }}>
@@ -268,6 +293,28 @@ const SemesterManager = ({ setPage }) => {
                       </td>
                       <td>
                         {sem.endDate || <span style={{ color: 'var(--text-muted)' }}>Not Set</span>}
+                      </td>
+                      <td>
+                        {(() => {
+                          const st = getSemesterStatus(sem);
+                          const bg = st === 'Active' ? '#e6f4ea' : st === 'Completed' ? '#e8f0fe' : '#fef7e0';
+                          const col = st === 'Active' ? '#137333' : st === 'Completed' ? '#1a73e8' : '#b06000';
+                          const dot = st === 'Active' ? '● ' : st === 'Completed' ? '✓ ' : '○ ';
+                          return (
+                            <span style={{
+                              display: 'inline-block',
+                              padding: '3px 10px',
+                              borderRadius: '12px',
+                              fontSize: '0.78rem',
+                              fontWeight: 600,
+                              backgroundColor: bg,
+                              color: col,
+                              border: `1px solid ${col}40`
+                            }}>
+                              {dot}{st}
+                            </span>
+                          );
+                        })()}
                       </td>
                       <td>
                         <div style={{ display: 'flex', gap: '8px' }}>

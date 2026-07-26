@@ -49,6 +49,8 @@ public class StudentHomeActivity extends AppCompatActivity {
     private List<DocumentSnapshot> predictionHistory = new ArrayList<>();
     private DocumentSnapshot currentPredictionDoc;
     private SemesterChipAdapter chipAdapter;
+    private double calculatedStudentCgpa = 0.0;
+    private boolean hasSpecialStatusGrade = false;
     
     private TextView tvStudentId, tvMotivationTip, tvWelcomeText, tvSpecialStatusNote, tvCurrentDate;
     private TextView tvSemGpa, tvCumGpa, tvPredGpa, btnViewFullReport;
@@ -113,7 +115,7 @@ public class StudentHomeActivity extends AppCompatActivity {
         });
 
         btnRedoPrediction.setOnClickListener(v -> {
-            startActivity(new Intent(StudentHomeActivity.this, ManualResultEntryActivity.class));
+            checkFirstSemesterAndRedirect();
         });
 
         btnViewFullReport.setOnClickListener(v -> {
@@ -199,18 +201,49 @@ public class StudentHomeActivity extends AppCompatActivity {
                             .get()
                             .addOnSuccessListener(resultSnap -> {
                                 if (!resultSnap.isEmpty()) {
-                                    allSemesters = resultSnap.getDocuments();
-                                    
-                                    if (checkFirstSemesterIncomplete(allSemesters)) {
-                                         showFirstSemesterIncompleteDialog(allSemesters.get(0).getId());
-                                         return;
-                                     }
+                                    List<DocumentSnapshot> validSemesters = new ArrayList<>();
+                                    for (DocumentSnapshot doc : resultSnap.getDocuments()) {
+                                        Boolean isPredOnly = doc.getBoolean("isPredictionOnly");
+                                        if (isPredOnly != null && isPredOnly) continue;
 
+                                        List<Map<String, Object>> mods = (List<Map<String, Object>>) doc.get("modules");
+                                        boolean hasRealGrade = false;
+                                        if (mods != null) {
+                                            for (Map<String, Object> m : mods) {
+                                                if (m.get("grade_point") != null || (m.get("grade") != null && !"N/A".equals(m.get("grade")))) {
+                                                    hasRealGrade = true;
+                                                    break;
+                                                }
+                                            }
+                                        }
+                                        if (hasRealGrade) {
+                                            validSemesters.add(doc);
+                                        }
+                                    }
+
+                                    allSemesters = validSemesters;
+                                    
+                                    if (!allSemesters.isEmpty()) {
+                                        if (checkFirstSemesterIncomplete(allSemesters)) {
+                                             showFirstSemesterIncompleteDialog(allSemesters.get(0).getId());
+                                             return;
+                                        }
+                                        calculateGpasAndPopulateUI(allSemesters);
+                                        setupSemesterSelectionBar();
+                                    } else {
+                                        calculateGpasAndPopulateUI(allSemesters);
+                                        setupSemesterSelectionBar();
+                                        if (currentPredictionDoc == null) {
+                                            checkFirstSemesterAndRedirect();
+                                        }
+                                    }
+                                } else {
+                                    allSemesters = new ArrayList<>();
                                     calculateGpasAndPopulateUI(allSemesters);
                                     setupSemesterSelectionBar();
-                                } else {
-                                    // Redirect based on current date and semester periods
-                                    checkFirstSemesterAndRedirect();
+                                    if (currentPredictionDoc == null) {
+                                        checkFirstSemesterAndRedirect();
+                                    }
                                 }
                             });
                 });
@@ -284,55 +317,63 @@ public class StudentHomeActivity extends AppCompatActivity {
                                         return id1.compareTo(id2);
                                     });
 
-                                    boolean isFirstSemOngoingOrFuture = true;
-                                    String firstSemDocId = null;
-                                    String firstSemName = "SEM01";
+                                    String activeSemDocId = null;
+                                    String activeSemName = "SEM01";
+                                    DocumentSnapshot activeSemDoc = null;
 
                                     if (!sems.isEmpty()) {
-                                        DocumentSnapshot firstSemDoc = sems.get(0);
-                                        firstSemDocId = firstSemDoc.getId();
-                                        String semIdAttr = firstSemDoc.getString("semesterId");
-                                        if (semIdAttr != null && !semIdAttr.trim().isEmpty()) {
-                                            firstSemName = semIdAttr;
-                                        }
+                                        java.util.Date today = new java.util.Date();
+                                        java.text.SimpleDateFormat sdf = new java.text.SimpleDateFormat("yyyy-MM-dd", java.util.Locale.US);
 
-                                        // Check if Semester 1 end date has passed
-                                        String endDateStr = firstSemDoc.getString("endDate");
-                                        if (endDateStr != null && !endDateStr.trim().isEmpty() && !endDateStr.equalsIgnoreCase("Not Set")) {
-                                            try {
-                                                java.text.SimpleDateFormat sdf = new java.text.SimpleDateFormat("yyyy-MM-dd", java.util.Locale.US);
-                                                java.util.Date endDate = sdf.parse(endDateStr.trim());
-                                                java.util.Date today = new java.util.Date();
-
-                                                // If today's date is past Semester 1 end date, Semester 1 is finished!
-                                                // Student is in Semester 2 (or higher) and needs Model A Manual Result Entry.
-                                                if (today.after(endDate)) {
-                                                    isFirstSemOngoingOrFuture = false;
-                                                }
-                                            } catch (Exception e) {
-                                                e.printStackTrace();
+                                        // First priority: check if any semester explicitly has status "Active" in Firestore
+                                        for (DocumentSnapshot doc : sems) {
+                                            String st = doc.getString("status");
+                                            if (st != null && st.trim().equalsIgnoreCase("Active")) {
+                                                activeSemDoc = doc;
+                                                break;
                                             }
                                         }
+
+                                        // Second priority: fall back to checking if today falls between startDate and endDate
+                                        if (activeSemDoc == null) {
+                                            for (DocumentSnapshot doc : sems) {
+                                                String startStr = doc.getString("startDate");
+                                                String endStr = doc.getString("endDate");
+                                                try {
+                                                    if (startStr != null && endStr != null && !startStr.equalsIgnoreCase("Not Set") && !endStr.equalsIgnoreCase("Not Set")) {
+                                                        java.util.Date sDate = sdf.parse(startStr.trim());
+                                                        java.util.Date eDate = sdf.parse(endStr.trim());
+                                                        if (!today.before(sDate) && !today.after(eDate)) {
+                                                            activeSemDoc = doc;
+                                                            break;
+                                                        }
+                                                    }
+                                                } catch (Exception e) {
+                                                    e.printStackTrace();
+                                                }
+                                            }
+                                        }
+
+                                        if (activeSemDoc == null) {
+                                            int completedCount = (allSemesters != null) ? allSemesters.size() : 0;
+                                            if (completedCount < sems.size()) {
+                                                activeSemDoc = sems.get(completedCount);
+                                            } else {
+                                                activeSemDoc = sems.get(sems.size() - 1);
+                                            }
+                                        }
+
+                                        activeSemDocId = activeSemDoc.getId();
+                                        String semIdAttr = activeSemDoc.getString("semesterId");
+                                        if (semIdAttr != null && !semIdAttr.trim().isEmpty()) {
+                                            activeSemName = semIdAttr;
+                                        } else {
+                                            activeSemName = activeSemDocId;
+                                        }
                                     }
 
-                                    if (isFirstSemOngoingOrFuture) {
-                                        // Student is in 1st Semester and about to sit for exams -> Model B Quiz
-                                        Intent intent = new Intent(StudentHomeActivity.this, FirstSemesterQuizActivity.class);
-                                        if (firstSemDocId != null) {
-                                            intent.putExtra("semesterDocId", firstSemDocId);
-                                        }
-                                        intent.putExtra("semesterName", firstSemName);
-                                        intent.putExtra("programId", programId);
-                                        if (batchId != null) {
-                                            intent.putExtra("batchId", batchId);
-                                        }
-                                        intent.setFlags(Intent.FLAG_ACTIVITY_NEW_TASK | Intent.FLAG_ACTIVITY_CLEAR_TASK);
-                                        startActivity(intent);
-                                        finish();
-                                    } else {
-                                        // Semester 1 has ended! Student has 1st semester results -> Model A Manual Entry
-                                        fallbackToManualEntry();
-                                    }
+                                    // Show selection modal to identify Model A, B, or C for the active semester!
+                                    showDataSelectionDialog(programId, batchId, activeSemName, activeSemDocId, activeSemDoc, sems);
                                 })
                                 .addOnFailureListener(e -> fallbackToManualEntry());
                     } else {
@@ -343,10 +384,254 @@ public class StudentHomeActivity extends AppCompatActivity {
     }
 
     private void fallbackToManualEntry() {
-        Intent intent = new Intent(StudentHomeActivity.this, ManualResultEntryActivity.class);
-        intent.setFlags(Intent.FLAG_ACTIVITY_NEW_TASK | Intent.FLAG_ACTIVITY_CLEAR_TASK);
+        showDataSelectionDialog("BIT", "", "SEM01", null, null, new ArrayList<>());
+    }
+
+    private void showDataSelectionDialog(String programId, String batchId, String firstSemName, String firstSemDocId, DocumentSnapshot activeSemDoc, List<DocumentSnapshot> sems) {
+        androidx.appcompat.app.AlertDialog.Builder builder = new androidx.appcompat.app.AlertDialog.Builder(this);
+
+        android.widget.LinearLayout root = new android.widget.LinearLayout(this);
+        root.setOrientation(android.widget.LinearLayout.VERTICAL);
+        int pad = (int) android.util.TypedValue.applyDimension(android.util.TypedValue.COMPLEX_UNIT_DIP, 24, getResources().getDisplayMetrics());
+        root.setPadding(pad, pad, pad, pad);
+        root.setBackgroundColor(Color.WHITE);
+
+        TextView tvTitle = new TextView(this);
+        tvTitle.setText("✨ AI GPA PREDICTOR SETUP");
+        tvTitle.setTextSize(android.util.TypedValue.COMPLEX_UNIT_SP, 18);
+        tvTitle.setTypeface(android.graphics.Typeface.DEFAULT_BOLD);
+        tvTitle.setTextColor(Color.parseColor("#1B5E20")); // Dark Green
+        tvTitle.setGravity(android.view.Gravity.CENTER);
+        root.addView(tvTitle);
+
+        TextView tvSub = new TextView(this);
+        tvSub.setText("What academic records do you have ready today? Check all that apply:");
+        tvSub.setTextSize(android.util.TypedValue.COMPLEX_UNIT_SP, 14);
+        tvSub.setTextColor(Color.parseColor("#424242"));
+        tvSub.setPadding(0, pad / 2, 0, pad / 2);
+        root.addView(tvSub);
+
+        android.widget.CheckBox cbCgpa = new android.widget.CheckBox(this);
+        cbCgpa.setText("Model A (Pre-Semester Baseline):\nPredict using my CGPA only (Before midterm exams)");
+        cbCgpa.setTextSize(android.util.TypedValue.COMPLEX_UNIT_SP, 15);
+        cbCgpa.setTextColor(Color.parseColor("#212121"));
+        cbCgpa.setPadding(0, pad / 4, 0, pad / 4);
+        root.addView(cbCgpa);
+
+        android.widget.CheckBox cbMid = new android.widget.CheckBox(this);
+        cbMid.setText("Model C (Comprehensive Master):\nPredict using my CGPA + Midterm & Assignment marks");
+        cbMid.setTextSize(android.util.TypedValue.COMPLEX_UNIT_SP, 15);
+        cbMid.setTextColor(Color.parseColor("#212121"));
+        cbMid.setPadding(0, pad / 4, 0, pad / 4);
+        root.addView(cbMid);
+
+        int semIndex = 1;
+        if (sems != null && activeSemDoc != null) {
+            int idx = sems.indexOf(activeSemDoc);
+            if (idx >= 0) semIndex = idx + 1;
+        } else if (firstSemName != null) {
+            if (firstSemName.toUpperCase().contains("02") || firstSemName.toUpperCase().contains("SEM02")) semIndex = 2;
+            else if (firstSemName.toUpperCase().contains("03") || firstSemName.toUpperCase().contains("SEM03")) semIndex = 3;
+            else if (firstSemName.toUpperCase().contains("04") || firstSemName.toUpperCase().contains("SEM04")) semIndex = 4;
+            else if (firstSemName.toUpperCase().contains("05") || firstSemName.toUpperCase().contains("SEM05")) semIndex = 5;
+            else if (firstSemName.toUpperCase().contains("06") || firstSemName.toUpperCase().contains("SEM06")) semIndex = 6;
+        }
+
+        boolean isWithinReleaseWindow = true;
+        if (semIndex >= 2 && activeSemDoc != null) {
+            String startStr = activeSemDoc.getString("startDate");
+            try {
+                if (startStr != null && !startStr.equalsIgnoreCase("Not Set")) {
+                    java.text.SimpleDateFormat sdf = new java.text.SimpleDateFormat("yyyy-MM-dd", java.util.Locale.US);
+                    java.util.Date sDate = sdf.parse(startStr.trim());
+                    java.util.Date today = new java.util.Date();
+                    long diffWeeks = (today.getTime() - sDate.getTime()) / (1000L * 60 * 60 * 24 * 7);
+                    if (diffWeeks > 10) {
+                        isWithinReleaseWindow = false;
+                    }
+                } else {
+                    isWithinReleaseWindow = false;
+                }
+            } catch (Exception e) {
+                isWithinReleaseWindow = false;
+            }
+        }
+
+        boolean hasCompletedPrevious = (allSemesters != null && !allSemesters.isEmpty()) || (calculatedStudentCgpa > 0.0);
+
+        androidx.appcompat.widget.AppCompatButton btnEnterGrades = null;
+        if (!hasCompletedPrevious && (semIndex == 1 || (semIndex == 2 && isWithinReleaseWindow))) {
+            tvSub.setText("As a First Year First Semester student (or awaiting Semester 1 results release within 5–10 weeks of Semester 2), you do not have a Cumulative GPA yet. Predict your GPA using your current Midterm & Assignment marks:");
+            cbCgpa.setVisibility(android.view.View.GONE);
+            cbCgpa.setChecked(false);
+            cbMid.setText("Model B (Mid-Semester Fresher):\nPredict using my Midterm & Assignment marks");
+            cbMid.setChecked(true);
+        } else if (!hasCompletedPrevious && !isWithinReleaseWindow && semIndex >= 2) {
+            tvSub.setText("📢 Official results for your previous semester have been released! To use Model A or Model C and get accurate future predictions, please enter your completed semester grades first.");
+            cbCgpa.setVisibility(android.view.View.GONE);
+            cbCgpa.setChecked(false);
+            cbMid.setText("Predict with Midterm Marks Only (Model B fallback)");
+            cbMid.setChecked(false);
+
+            btnEnterGrades = new androidx.appcompat.widget.AppCompatButton(this);
+            btnEnterGrades.setText("ENTER COMPLETED SEMESTER GRADES");
+            btnEnterGrades.setTextColor(Color.WHITE);
+            btnEnterGrades.setBackgroundColor(Color.parseColor("#1B5E20"));
+            btnEnterGrades.setTypeface(android.graphics.Typeface.DEFAULT_BOLD);
+            android.widget.LinearLayout.LayoutParams gradeParams = new android.widget.LinearLayout.LayoutParams(
+                    android.widget.LinearLayout.LayoutParams.MATCH_PARENT,
+                    android.widget.LinearLayout.LayoutParams.WRAP_CONTENT
+            );
+            gradeParams.setMargins(0, pad, 0, 0);
+            btnEnterGrades.setLayoutParams(gradeParams);
+            root.addView(btnEnterGrades);
+        } else if (hasCompletedPrevious) {
+            tvSub.setText("You have completed previous semesters (CGPA = " + String.format(java.util.Locale.US, "%.2f", calculatedStudentCgpa) + "). Select the model based on what marks you currently have for " + ((firstSemName != null) ? firstSemName : "this semester") + ":");
+        }
+
+        androidx.appcompat.widget.AppCompatButton btnContinue = new androidx.appcompat.widget.AppCompatButton(this);
+        btnContinue.setText("CONTINUE TO PREDICTOR ➔");
+        btnContinue.setTextColor(Color.WHITE);
+        btnContinue.setBackgroundColor(Color.parseColor("#2E7D32"));
+        btnContinue.setTypeface(android.graphics.Typeface.DEFAULT_BOLD);
+        android.widget.LinearLayout.LayoutParams btnParams = new android.widget.LinearLayout.LayoutParams(
+                android.widget.LinearLayout.LayoutParams.MATCH_PARENT,
+                android.widget.LinearLayout.LayoutParams.WRAP_CONTENT
+        );
+        btnParams.setMargins(0, pad / 2, 0, 0);
+        btnContinue.setLayoutParams(btnParams);
+        root.addView(btnContinue);
+
+        builder.setView(root);
+        androidx.appcompat.app.AlertDialog dialog = builder.create();
+        if (dialog.getWindow() != null) {
+            dialog.getWindow().setBackgroundDrawable(new android.graphics.drawable.ColorDrawable(Color.TRANSPARENT));
+        }
+
+        if (btnEnterGrades != null) {
+            btnEnterGrades.setOnClickListener(v -> {
+                dialog.dismiss();
+                Intent intent = new Intent(this, ManualResultEntryActivity.class);
+                if (firstSemDocId != null) intent.putExtra("firstSemDocId", firstSemDocId);
+                if (firstSemName != null) intent.putExtra("firstSemName", firstSemName);
+                if (programId != null) intent.putExtra("programId", programId);
+                if (batchId != null) intent.putExtra("batchId", batchId);
+                startActivity(intent);
+            });
+        }
+
+        final int finalSemIndex = semIndex;
+        final boolean finalIsWithinReleaseWindow = isWithinReleaseWindow;
+        final boolean finalHasCompletedPrevious = hasCompletedPrevious;
+
+        btnContinue.setOnClickListener(v -> {
+            boolean hasCgpa = cbCgpa.isChecked();
+            boolean hasMid = cbMid.isChecked();
+
+            if (!hasCgpa && !hasMid) {
+                android.widget.Toast.makeText(this, "Please select a prediction model!", android.widget.Toast.LENGTH_SHORT).show();
+                return;
+            }
+
+            dialog.dismiss();
+
+            if (hasCgpa && hasSpecialStatusGrade) {
+                android.widget.Toast.makeText(this, "⚠️ Cannot use CGPA: You have Special Status grades (AB, NE, MC, WH, INC). PrePal will predict using your Midterm & Assignment marks.", android.widget.Toast.LENGTH_LONG).show();
+                hasCgpa = false;
+                hasMid = true;
+            }
+
+            if (!finalHasCompletedPrevious && (finalSemIndex == 1 || (finalSemIndex == 2 && finalIsWithinReleaseWindow))) {
+                // Model B: Mid-Semester Fresher (No CGPA, module marks required)
+                Intent intent = new Intent(this, FirstSemesterQuizActivity.class);
+                if (firstSemDocId != null) {
+                    intent.putExtra("semesterDocId", firstSemDocId);
+                }
+                intent.putExtra("semesterName", (firstSemName != null && !firstSemName.trim().isEmpty()) ? firstSemName : "SEM01");
+                intent.putExtra("programId", (programId != null && !programId.trim().isEmpty()) ? programId : "BIT");
+                if (batchId != null) {
+                    intent.putExtra("batchId", batchId);
+                }
+                startActivity(intent);
+            } else if (!finalHasCompletedPrevious && !finalIsWithinReleaseWindow && finalSemIndex >= 2 && hasMid) {
+                // Model B fallback when student hasn't entered grades yet
+                Intent intent = new Intent(this, FirstSemesterQuizActivity.class);
+                if (firstSemDocId != null) {
+                    intent.putExtra("semesterDocId", firstSemDocId);
+                }
+                intent.putExtra("semesterName", (firstSemName != null && !firstSemName.trim().isEmpty()) ? firstSemName : "SEM01");
+                intent.putExtra("programId", (programId != null && !programId.trim().isEmpty()) ? programId : "BIT");
+                if (batchId != null) {
+                    intent.putExtra("batchId", batchId);
+                }
+                startActivity(intent);
+            } else if (finalHasCompletedPrevious) {
+                if (hasMid) {
+                    // Model C: Comprehensive Master (Both CGPA and Module marks required)
+                    if (calculatedStudentCgpa <= 0.0) {
+                        openManualResultEntryForCgpa(true, firstSemDocId, firstSemName, programId, batchId);
+                    } else {
+                        launchModelWithCgpa(true, calculatedStudentCgpa, firstSemDocId, firstSemName, programId, batchId);
+                    }
+                } else if (hasCgpa) {
+                    // Model A: Pre-Semester Baseline (CGPA only, no module midterms required)
+                    if (calculatedStudentCgpa <= 0.0) {
+                        openManualResultEntryForCgpa(false, firstSemDocId, firstSemName, programId, batchId);
+                    } else {
+                        launchModelWithCgpa(false, calculatedStudentCgpa, firstSemDocId, firstSemName, programId, batchId);
+                    }
+                }
+            } else {
+                openManualResultEntryForCgpa(false, firstSemDocId, firstSemName, programId, batchId);
+            }
+        });
+
+        dialog.show();
+    }
+
+    private void openManualResultEntryForCgpa(boolean isModelC, String firstSemDocId, String firstSemName, String programId, String batchId) {
+        android.widget.Toast.makeText(this, "Please enter your completed semester grades first so PrePal can calculate your official CGPA!", android.widget.Toast.LENGTH_LONG).show();
+        Intent intent = new Intent(this, ManualResultEntryActivity.class);
+        if (isModelC) {
+            intent.putExtra("nextStepModelC", true);
+            if (firstSemDocId != null) intent.putExtra("firstSemDocId", firstSemDocId);
+            if (firstSemName != null) intent.putExtra("firstSemName", firstSemName);
+            if (programId != null) intent.putExtra("programId", programId);
+            if (batchId != null) intent.putExtra("batchId", batchId);
+        }
         startActivity(intent);
-        finish();
+    }
+
+    private void launchModelWithCgpa(boolean isModelC, double cgpaToUse, String firstSemDocId, String firstSemName, String programId, String batchId) {
+        if (isModelC) {
+            // Model C: Comprehensive Master (CGPA + Module Midterm/Assignment marks)
+            Intent intent = new Intent(this, FirstSemesterQuizActivity.class);
+            if (firstSemDocId != null) {
+                intent.putExtra("semesterDocId", firstSemDocId);
+            }
+            intent.putExtra("semesterName", (firstSemName != null && !firstSemName.trim().isEmpty()) ? firstSemName : "SEM01");
+            intent.putExtra("programId", (programId != null && !programId.trim().isEmpty()) ? programId : "BIT");
+            if (batchId != null) {
+                intent.putExtra("batchId", batchId);
+            }
+            intent.putExtra("cumulativeGpa", cgpaToUse);
+            intent.putExtra("studentType", 3);
+            startActivity(intent);
+        } else {
+            // Model A: Pre-Semester Baseline (CGPA only, no module midterms required)
+            Intent intent = new Intent(this, QuizActivity.class);
+            if (firstSemDocId != null) {
+                intent.putExtra("semesterDocId", firstSemDocId);
+            }
+            intent.putExtra("semesterName", (firstSemName != null && !firstSemName.trim().isEmpty()) ? firstSemName : "SEM01");
+            intent.putExtra("programId", (programId != null && !programId.trim().isEmpty()) ? programId : "BIT");
+            if (batchId != null) {
+                intent.putExtra("batchId", batchId);
+            }
+            intent.putExtra("cumulativeGpa", cgpaToUse);
+            intent.putExtra("results", new java.util.ArrayList<Map<String, Object>>());
+            startActivity(intent);
+        }
     }
 
     private boolean checkFirstSemesterIncomplete(List<DocumentSnapshot> semesters) {
@@ -396,15 +681,23 @@ public class StudentHomeActivity extends AppCompatActivity {
 
     private boolean isSemesterValid(DocumentSnapshot semDoc) {
         if (semDoc == null) return false;
+        Boolean isPredOnly = semDoc.getBoolean("isPredictionOnly");
+        if (isPredOnly != null && isPredOnly) return false;
+
         List<Map<String, Object>> modules = (List<Map<String, Object>>) semDoc.get("modules");
-        if (modules == null) return false;
+        if (modules == null || modules.isEmpty()) return false;
+        boolean hasActualGrade = false;
         for (Map<String, Object> mod : modules) {
             String grade = (String) mod.get("grade");
-            if (grade != null && (grade.equals("MC") || grade.equals("AB") || grade.equals("NE") || grade.equals("WH") || grade.equals("INC"))) {
+            Object gp = mod.get("grade_point");
+            if (gp != null || (grade != null && !"N/A".equals(grade) && !"INC".equals(grade))) {
+                hasActualGrade = true;
+            }
+            if (grade != null && (grade.equals("MC") || grade.equals("AB") || grade.equals("NE") || grade.equals("WH") || grade.equals("INC") || grade.equals("N/A"))) {
                 return false;
             }
         }
-        return true;
+        return hasActualGrade;
     }
 
     private void setupSemesterSelectionBar() {
@@ -600,6 +893,7 @@ public class StudentHomeActivity extends AppCompatActivity {
         double targetSemGpa = 0;
         double targetCumGpa = 0;
         String targetSemName = "";
+        hasSpecialStatusGrade = false;
         
         for (int i = 0; i <= targetPos; i++) {
             DocumentSnapshot sem = semesters.get(i);
@@ -612,6 +906,7 @@ public class StudentHomeActivity extends AppCompatActivity {
             for (Map<String, Object> mod : modules) {
                 String grade = (String) mod.get("grade");
                 if (grade != null && (grade.equals("MC") || grade.equals("AB") || grade.equals("NE") || grade.equals("WH") || grade.equals("INC"))) {
+                    hasSpecialStatusGrade = true;
                     continue;
                 }
 
@@ -638,12 +933,21 @@ public class StudentHomeActivity extends AppCompatActivity {
             if (i == targetPos) {
                 targetSemGpa = semGpa;
                 targetCumGpa = totalCredits > 0 ? (totalPoints / totalCredits) : 0;
+                calculatedStudentCgpa = targetCumGpa;
                 targetSemName = sem.getString("semesterName");
                 if (targetSemName == null) targetSemName = "Semester " + (i + 1);
             }
         }
 
-        if (targetPos >= 0) {
+        if (hasSpecialStatusGrade) {
+            tvSemGpa.setText("N/A");
+            tvCumGpa.setText("N/A");
+            calculatedStudentCgpa = 0.0;
+            tvSemGpaSub.setText("Special Grade");
+            tvCumGpaSub.setText("Action Required");
+            tvMotivationTip.setText("⚠️ Special Status Grade (AB, NE, MC, WH, INC) detected. GPA and CGPA cannot be calculated until all special status grades are cleared.");
+            setupClassStandingChart(0.0, false, false);
+        } else if (targetPos >= 0) {
             tvSemGpa.setText(String.format(java.util.Locale.US, "%.2f", targetSemGpa));
             tvCumGpa.setText(String.format(java.util.Locale.US, "%.2f", targetCumGpa));
             tvSemGpaSub.setText(targetSemName);
@@ -696,7 +1000,8 @@ public class StudentHomeActivity extends AppCompatActivity {
         styleLineDataSet(predictionDataSet, Color.parseColor("#7C3AED"), false);
         predictionDataSet.setCircleRadius(8f);
         predictionDataSet.setDrawValues(true);
-        predictionDataSet.setValueTextSize(12f);
+        predictionDataSet.setValueTextSize(13f);
+        predictionDataSet.setValueTypeface(android.graphics.Typeface.DEFAULT_BOLD);
         predictionDataSet.setValueTextColor(Color.parseColor("#7C3AED"));
         predictionDataSet.setValueFormatter(new ValueFormatter() {
             @Override
@@ -709,6 +1014,7 @@ public class StudentHomeActivity extends AppCompatActivity {
         lineChartGpa.setData(lineData);
         lineChartGpa.getDescription().setEnabled(false);
         lineChartGpa.getLegend().setEnabled(false);
+        lineChartGpa.setExtraOffsets(12f, 26f, 16f, 12f);
 
         XAxis xAxis = lineChartGpa.getXAxis();
         xAxis.setPosition(XAxis.XAxisPosition.BOTTOM);
@@ -744,6 +1050,8 @@ public class StudentHomeActivity extends AppCompatActivity {
         LineData lineData = new LineData();
         LineDataSet historyDataSet = new LineDataSet(historyEntries, "GPA History");
         styleLineDataSet(historyDataSet, Color.parseColor("#057BFE"), true);
+        historyDataSet.setValueTextSize(11f);
+        historyDataSet.setValueTypeface(android.graphics.Typeface.DEFAULT_BOLD);
         lineData.addDataSet(historyDataSet);
 
         String predStr = tvPredGpa.getText().toString();
@@ -759,19 +1067,39 @@ public class StudentHomeActivity extends AppCompatActivity {
             LineDataSet predictionDataSet = new LineDataSet(predictionEntries, "Prediction");
             styleLineDataSet(predictionDataSet, Color.parseColor("#7C3AED"), false);
             predictionDataSet.enableDashedLine(10f, 10f, 0f);
+            predictionDataSet.setCircleRadius(7f);
+            predictionDataSet.setDrawValues(true);
+            predictionDataSet.setValueTextSize(13f);
+            predictionDataSet.setValueTypeface(android.graphics.Typeface.DEFAULT_BOLD);
+            predictionDataSet.setValueTextColor(Color.parseColor("#7C3AED"));
+            final float lastHistoryXVal = lastHistory.getX();
+            predictionDataSet.setValueFormatter(new ValueFormatter() {
+                @Override
+                public String getPointLabel(Entry entry) {
+                    if (entry.getX() > lastHistoryXVal) {
+                        return String.format(java.util.Locale.US, "%.2f", entry.getY());
+                    }
+                    return "";
+                }
+                @Override
+                public String getFormattedValue(float value) {
+                    return String.format(java.util.Locale.US, "%.2f", value);
+                }
+            });
             lineData.addDataSet(predictionDataSet);
         }
 
         lineChartGpa.setData(lineData);
         lineChartGpa.getDescription().setEnabled(false);
         lineChartGpa.getLegend().setEnabled(false);
+        lineChartGpa.setExtraOffsets(12f, 26f, 16f, 12f);
         
         XAxis xAxis = lineChartGpa.getXAxis();
         xAxis.setPosition(XAxis.XAxisPosition.BOTTOM);
         xAxis.setDrawGridLines(false);
         xAxis.setDrawAxisLine(false);
         xAxis.setGranularity(1f);
-        xAxis.setLabelCount(historyEntries.size() + 1);
+        xAxis.setLabelCount(historyEntries.size() + (predValue > 0 ? 1 : 0));
         xAxis.setValueFormatter(new IndexAxisValueFormatter() {
             @Override
             public String getFormattedValue(float value) {
@@ -792,6 +1120,7 @@ public class StudentHomeActivity extends AppCompatActivity {
         ArrayList<Integer> colors = new ArrayList<>();
 
         if (results != null) {
+            int validIndex = 0;
             for (int i = 0; i < results.size(); i++) {
                 Map<String, Object> res = results.get(i);
                 double gp = 0;
@@ -799,16 +1128,29 @@ public class StudentHomeActivity extends AppCompatActivity {
                 if (pt instanceof Double) gp = (Double) pt;
                 else if (pt instanceof Long) gp = ((Long) pt).doubleValue();
                 
-                String moduleId = (String) res.get("module_id");
                 String grade = (String) res.get("grade");
+                if (pt == null && (grade == null || "N/A".equals(grade) || "INC".equals(grade))) {
+                    continue; // Skip non-value / dummy modules in the chart!
+                }
+
+                String moduleId = (String) res.get("module_id");
+                if (moduleId == null || moduleId.trim().isEmpty()) {
+                    moduleId = (String) res.get("moduleName");
+                }
                 
-                entries.add(new BarEntry(i, (float) gp));
-                labels.add(moduleId != null ? moduleId : "Module " + (i + 1));
+                entries.add(new BarEntry(validIndex++, (float) gp));
+                labels.add(moduleId != null ? moduleId : "Module " + (validIndex));
                 
                 if (grade != null && (grade.equals("F") || grade.equals("AB") || grade.equals("MC") || grade.equals("NE") || gp < 2.0)) {
-                    colors.add(Color.parseColor("#FF4B4B"));
+                    colors.add(Color.parseColor("#E53E3E")); // Red for Weak/Fail
+                } else if (gp >= 3.7) {
+                    colors.add(Color.parseColor("#ECC94B")); // Gold
+                } else if (gp >= 3.3) {
+                    colors.add(Color.parseColor("#48BB78")); // Green
+                } else if (gp >= 3.0) {
+                    colors.add(Color.parseColor("#4299E1")); // Blue
                 } else {
-                    colors.add(Color.parseColor("#057BFE"));
+                    colors.add(Color.parseColor("#ED8936")); // Orange
                 }
             }
         }
@@ -822,11 +1164,12 @@ public class StudentHomeActivity extends AppCompatActivity {
         BarDataSet dataSet = new BarDataSet(entries, "Performance");
         dataSet.setColors(colors);
         dataSet.setDrawValues(true);
-        dataSet.setValueTextSize(10f);
+        dataSet.setValueTextSize(11f);
+        dataSet.setValueTypeface(android.graphics.Typeface.DEFAULT_BOLD);
         dataSet.setValueFormatter(new ValueFormatter() {
             @Override
             public String getFormattedValue(float value) {
-                return String.format("%.2f", value);
+                return String.format(java.util.Locale.US, "%.2f", value);
             }
         });
 
@@ -836,6 +1179,7 @@ public class StudentHomeActivity extends AppCompatActivity {
         barChartPerformance.setData(data);
         barChartPerformance.getDescription().setEnabled(false);
         barChartPerformance.getLegend().setEnabled(false);
+        barChartPerformance.setExtraOffsets(12f, 26f, 16f, 12f);
         
         XAxis xAxis = barChartPerformance.getXAxis();
         xAxis.setPosition(XAxis.XAxisPosition.BOTTOM);
@@ -853,16 +1197,19 @@ public class StudentHomeActivity extends AppCompatActivity {
 
     private void setupYAxis(YAxis yAxis) {
         yAxis.setAxisMinimum(0f);
-        yAxis.setAxisMaximum(4.0f);
-        yAxis.setLabelCount(11, true);
+        yAxis.setAxisMaximum(4.25f);
+        yAxis.setLabelCount(9, false);
         yAxis.setDrawGridLines(true);
         yAxis.setGridColor(Color.parseColor("#E0E0E0"));
         yAxis.setDrawAxisLine(true);
+        yAxis.setTextSize(11f);
+        yAxis.setTextColor(Color.parseColor("#4A5568"));
         
         yAxis.setValueFormatter(new ValueFormatter() {
             @Override
             public String getFormattedValue(float value) {
-                return String.format("%.2f", value);
+                if (value > 4.01f) return "";
+                return String.format(java.util.Locale.US, "%.2f", value);
             }
         });
     }
@@ -877,8 +1224,10 @@ public class StudentHomeActivity extends AppCompatActivity {
         dataSet.setColor(color);
         dataSet.setDrawCircleHole(true);
         dataSet.setCircleHoleColor(Color.WHITE);
-        dataSet.setDrawValues(isHistory);
-        dataSet.setValueTextSize(9f);
+        dataSet.setDrawValues(true);
+        dataSet.setValueTextSize(11f);
+        dataSet.setValueTypeface(android.graphics.Typeface.DEFAULT_BOLD);
+        dataSet.setValueTextColor(color);
         
         if (isHistory) {
             dataSet.setFillDrawable(new GradientDrawable(GradientDrawable.Orientation.TOP_BOTTOM, 
@@ -1046,6 +1395,11 @@ public class StudentHomeActivity extends AppCompatActivity {
         }
 
         bottomSheetDialog.show();
+
+        java.util.List<String> warnings = (java.util.List<String>) currentPredictionDoc.get("acknowledgementsRequired");
+        if (warnings != null && !warnings.isEmpty()) {
+            AcknowledgementDialogHelper.showWarningDialog(this, warnings, null);
+        }
     }
 
     private void setupBottomNavigation() {

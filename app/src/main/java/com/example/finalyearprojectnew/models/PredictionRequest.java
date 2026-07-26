@@ -35,6 +35,9 @@ public class PredictionRequest {
     @SerializedName("gpa")
     public double gpa;
 
+    @SerializedName("cgpa")
+    public double cgpa;
+
     @SerializedName("results")
     public List<Map<String, Object>> results;
 

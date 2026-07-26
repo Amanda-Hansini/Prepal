@@ -129,7 +129,40 @@ public class AdminSettingsActivity extends AppCompatActivity {
 
         EditText etNewPassword = dialogView.findViewById(R.id.etNewPassword);
         EditText etConfirmPassword = dialogView.findViewById(R.id.etConfirmPassword);
+        ImageView ivToggleNewPassword = dialogView.findViewById(R.id.ivToggleNewPassword);
+        ImageView ivToggleConfirmPassword = dialogView.findViewById(R.id.ivToggleConfirmPassword);
         AppCompatButton btnUpdate = dialogView.findViewById(R.id.btnUpdatePassword);
+
+        final boolean[] isNewVisible = {false};
+        final boolean[] isConfVisible = {false};
+
+        if (ivToggleNewPassword != null) {
+            ivToggleNewPassword.setOnClickListener(v -> {
+                isNewVisible[0] = !isNewVisible[0];
+                if (isNewVisible[0]) {
+                    etNewPassword.setInputType(android.text.InputType.TYPE_CLASS_TEXT | android.text.InputType.TYPE_TEXT_VARIATION_VISIBLE_PASSWORD);
+                    ivToggleNewPassword.setImageResource(R.drawable.ic_eye_filled);
+                } else {
+                    etNewPassword.setInputType(android.text.InputType.TYPE_CLASS_TEXT | android.text.InputType.TYPE_TEXT_VARIATION_PASSWORD);
+                    ivToggleNewPassword.setImageResource(R.drawable.ic_eye_off_filled);
+                }
+                etNewPassword.setSelection(etNewPassword.getText().length());
+            });
+        }
+
+        if (ivToggleConfirmPassword != null) {
+            ivToggleConfirmPassword.setOnClickListener(v -> {
+                isConfVisible[0] = !isConfVisible[0];
+                if (isConfVisible[0]) {
+                    etConfirmPassword.setInputType(android.text.InputType.TYPE_CLASS_TEXT | android.text.InputType.TYPE_TEXT_VARIATION_VISIBLE_PASSWORD);
+                    ivToggleConfirmPassword.setImageResource(R.drawable.ic_eye_filled);
+                } else {
+                    etConfirmPassword.setInputType(android.text.InputType.TYPE_CLASS_TEXT | android.text.InputType.TYPE_TEXT_VARIATION_PASSWORD);
+                    ivToggleConfirmPassword.setImageResource(R.drawable.ic_eye_off_filled);
+                }
+                etConfirmPassword.setSelection(etConfirmPassword.getText().length());
+            });
+        }
 
         btnUpdate.setOnClickListener(v -> {
             String newPass = etNewPassword.getText().toString().trim();

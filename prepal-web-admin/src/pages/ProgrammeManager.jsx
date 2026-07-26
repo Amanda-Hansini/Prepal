@@ -12,6 +12,17 @@ import { db } from '../firebase';
 import { logActivity } from '../utils/activityLogger';
 import ConfirmModal from '../components/ConfirmModal';
 
+const getSemesterStatus = (sem) => {
+  if (sem.status) return sem.status;
+  if (!sem.startDate || !sem.endDate || sem.startDate === 'Not Set' || sem.endDate === 'Not Set' || sem.startDate === '' || sem.endDate === '') return 'Inactive';
+  const today = new Date();
+  const sDate = new Date(sem.startDate);
+  const eDate = new Date(sem.endDate);
+  if (today >= sDate && today <= eDate) return 'Active';
+  if (today > eDate) return 'Completed';
+  return 'Inactive';
+};
+
 const ProgrammeManager = ({ setPage, initialTab = 'batches', initialView = 'list' }) => {
   const [view, setView] = useState(initialView); // 'list', 'wizard', 'details'
   const [selectedProgramme, setSelectedProgramme] = useState(null);
@@ -1668,7 +1679,33 @@ const ProgrammeManager = ({ setPage, initialTab = 'batches', initialView = 'list
     );
   };
 
-  
+  const handleSyncAllSemesterStatuses = async () => {
+    try {
+      setIsSaving(true);
+      const batchCommit = writeBatch(db);
+      let count = 0;
+      for (const sem of hubSemesters) {
+        if (sem.docPath) {
+          const st = getSemesterStatus(sem);
+          batchCommit.set(doc(db, sem.docPath), { status: st }, { merge: true });
+          count++;
+        }
+      }
+      if (count > 0) {
+        await batchCommit.commit();
+        toast.success(`Synced status to Firebase for ${count} semesters!`);
+        await fetchHubData();
+      } else {
+        toast.success("No semesters to sync.");
+      }
+    } catch (error) {
+      console.error("Error syncing statuses:", error);
+      toast.error("Sync failed: " + error.message);
+    } finally {
+      setIsSaving(false);
+    }
+  };
+
   const renderBatchDetails = () => {
     return (
       <motion.div 
@@ -1685,11 +1722,24 @@ const ProgrammeManager = ({ setPage, initialTab = 'batches', initialView = 'list
               <h1>{selectedBatch?.batchName}</h1>
               <span className="hub-id-badge">{selectedBatch?.batchId}</span>
             </div>
-             {batchActiveTab === 'modules' && (
-              <button className="btn-primary" onClick={handleAddNewModule}>
-                <Plus size={18} /> Add Module
-              </button>
-            )}
+            <div style={{ display: 'flex', gap: '10px' }}>
+              {batchActiveTab === 'semesters' && (
+                <button
+                  className="btn-primary"
+                  onClick={handleSyncAllSemesterStatuses}
+                  disabled={isSaving}
+                  style={{ backgroundColor: '#10b981', display: 'flex', alignItems: 'center', gap: '6px' }}
+                  title="Save/Sync all semester status fields to Firestore"
+                >
+                  <Check size={18} /> Sync Status to Firebase
+                </button>
+              )}
+              {batchActiveTab === 'modules' && (
+                <button className="btn-primary" onClick={handleAddNewModule}>
+                  <Plus size={18} /> Add Module
+                </button>
+              )}
+            </div>
           </div>
 
           <div className="hub-tabs">
@@ -1727,6 +1777,7 @@ const ProgrammeManager = ({ setPage, initialTab = 'batches', initialView = 'list
                         <th>Semester Name</th>
                         <th>Start Date</th>
                         <th>End Date</th>
+                        <th>Status</th>
                         <th>Actions</th>
                       </tr>
                     </thead>
@@ -1735,7 +1786,7 @@ const ProgrammeManager = ({ setPage, initialTab = 'batches', initialView = 'list
                         const bMatch = !s.batchId || String(s.batchId || '').trim().toLowerCase() === String(selectedBatch?.batchId || '').trim().toLowerCase() || String(s.batchId || '').trim().toLowerCase() === String(selectedBatch?.batchName || '').trim().toLowerCase();
                         return bMatch;
                       }).length === 0 ? (
-                        <tr><td colSpan="7" className="text-center">No semesters match this filter. (Total loaded in hubSemesters: {hubSemesters.length}, for degree: {selectedProgramme?.id}, batchId: {selectedBatch?.batchId}, batchName: {selectedBatch?.batchName})</td></tr>
+                        <tr><td colSpan="8" className="text-center">No semesters match this filter. (Total loaded in hubSemesters: {hubSemesters.length}, for degree: {selectedProgramme?.id}, batchId: {selectedBatch?.batchId}, batchName: {selectedBatch?.batchName})</td></tr>
                       ) : hubSemesters.filter(s => {
                         const bMatch = !s.batchId || String(s.batchId || '').trim().toLowerCase() === String(selectedBatch?.batchId || '').trim().toLowerCase() || String(s.batchId || '').trim().toLowerCase() === String(selectedBatch?.batchName || '').trim().toLowerCase();
                         return bMatch;
@@ -1762,6 +1813,18 @@ const ProgrammeManager = ({ setPage, initialTab = 'batches', initialView = 'list
                                 <input type="date" className="form-input" style={{padding: '4px', fontSize: '0.9rem', width: '130px'}} value={editingHubItemData.endDate || ''} onChange={e => setEditingHubItemData({...editingHubItemData, endDate: e.target.value})} />
                               </td>
                               <td>
+                                <select
+                                  className="form-input"
+                                  style={{ padding: '4px', fontSize: '0.85rem', width: '110px' }}
+                                  value={editingHubItemData.status || getSemesterStatus(sem)}
+                                  onChange={e => setEditingHubItemData({ ...editingHubItemData, status: e.target.value })}
+                                >
+                                  <option value="Active">Active</option>
+                                  <option value="Inactive">Inactive</option>
+                                  <option value="Completed">Completed</option>
+                                </select>
+                              </td>
+                              <td>
                                 <div style={{ display: 'flex', gap: '8px' }}>
                                   <button className="icon-action-btn edit" onClick={handleSaveHubItem} title="Save"><Check size={16} /></button>
                                   <button className="icon-action-btn delete" onClick={cancelEditHubItem} title="Cancel"><X size={16} /></button>
@@ -1780,6 +1843,28 @@ const ProgrammeManager = ({ setPage, initialTab = 'batches', initialView = 'list
                               </td>
                               <td>{sem.startDate ? (sem.startDate.includes('-') ? sem.startDate : new Date(sem.startDate).toLocaleDateString()) : 'Not Set'}</td>
                               <td>{sem.endDate ? (sem.endDate.includes('-') ? sem.endDate : new Date(sem.endDate).toLocaleDateString()) : 'Not Set'}</td>
+                              <td>
+                                {(() => {
+                                  const st = getSemesterStatus(sem);
+                                  const bg = st === 'Active' ? '#e6f4ea' : st === 'Completed' ? '#e8f0fe' : '#fef7e0';
+                                  const col = st === 'Active' ? '#137333' : st === 'Completed' ? '#1a73e8' : '#b06000';
+                                  const dot = st === 'Active' ? '● ' : st === 'Completed' ? '✓ ' : '○ ';
+                                  return (
+                                    <span style={{
+                                      display: 'inline-block',
+                                      padding: '3px 10px',
+                                      borderRadius: '12px',
+                                      fontSize: '0.78rem',
+                                      fontWeight: 600,
+                                      backgroundColor: bg,
+                                      color: col,
+                                      border: `1px solid ${col}40`
+                                    }}>
+                                      {dot}{st}
+                                    </span>
+                                  );
+                                })()}
+                              </td>
                               <td>
                                 <div style={{ display: 'flex', gap: '8px' }}>
                                   <button className="icon-action-btn edit" onClick={() => handleEditHubItem('semesters', sem)} title="Edit"><Edit2 size={16} /></button>
