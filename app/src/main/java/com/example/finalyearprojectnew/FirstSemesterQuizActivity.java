@@ -98,7 +98,7 @@ public class FirstSemesterQuizActivity extends AppCompatActivity {
 
         initViews();
         setupListeners();
-        fetchModulesFromDatabase();
+        resolveTargetSemesterAndFetchModules();
     }
 
     private void fetchModulesFromDatabase() {
@@ -158,6 +158,78 @@ public class FirstSemesterQuizActivity extends AppCompatActivity {
                     dialog.dismiss();
                     Toast.makeText(this, "Failed to load modules: " + e.getMessage(), Toast.LENGTH_LONG).show();
                 });
+    }
+
+    private void resolveTargetSemesterAndFetchModules() {
+        ProgressDialog dialog = new ProgressDialog(this);
+        dialog.setMessage("Resolving Target Semester...");
+        dialog.setCancelable(false);
+        dialog.show();
+
+        if (programId == null || programId.trim().isEmpty()) {
+            programId = "BIT";
+        }
+
+        FirebaseFirestore.getInstance().collection("Degrees").document(programId)
+                .collection("Semesters")
+                .get()
+                .addOnSuccessListener(queryDocumentSnapshots -> {
+                    dialog.dismiss();
+                    
+                    if (!queryDocumentSnapshots.isEmpty()) {
+                        List<SemesterInfo> semesterList = new ArrayList<>();
+                        for (com.google.firebase.firestore.DocumentSnapshot doc : queryDocumentSnapshots) {
+                            String sId = doc.getString("semesterId");
+                            if (sId != null) {
+                                semesterList.add(new SemesterInfo(doc.getId(), doc.getString("name"), sId));
+                            }
+                        }
+
+                        java.util.Collections.sort(semesterList, (s1, s2) -> Integer.compare(extractNumber(s1.semesterId), extractNumber(s2.semesterId)));
+
+                        double passedCgpa = getIntent().getDoubleExtra("cumulativeGpa", 0.0);
+                        if (passedCgpa > 0 && semesterName != null && !semesterName.equals("SEM01") && !semesterName.equals("SEM02")) {
+                            // Find the passed semester in the list
+                            int foundIndex = -1;
+                            for (int i = 0; i < semesterList.size(); i++) {
+                                if (semesterList.get(i).semesterId.equals(semesterName)) {
+                                    foundIndex = i;
+                                    break;
+                                }
+                            }
+                            if (foundIndex != -1 && foundIndex + 1 < semesterList.size()) {
+                                semesterName = semesterList.get(foundIndex + 1).semesterId;
+                            }
+                        } else if (passedCgpa <= 0) {
+                            // Fresher: Target is the first semester
+                            if (semesterList.size() > 0) {
+                                semesterName = semesterList.get(0).semesterId;
+                            }
+                        }
+                    }
+                    
+                    fetchModulesFromDatabase();
+                })
+                .addOnFailureListener(e -> {
+                    dialog.dismiss();
+                    // Fallback to original logic
+                    fetchModulesFromDatabase();
+                });
+    }
+
+    private int extractNumber(String str) {
+        if (str == null) return 0;
+        String num = str.replaceAll("\\D+", "");
+        return num.isEmpty() ? 0 : Integer.parseInt(num);
+    }
+
+    private static class SemesterInfo {
+        String id, name, semesterId;
+        SemesterInfo(String id, String name, String semesterId) {
+            this.id = id;
+            this.name = name;
+            this.semesterId = semesterId;
+        }
     }
 
     private void buildQuestionsList() {
