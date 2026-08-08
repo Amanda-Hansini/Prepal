@@ -61,16 +61,27 @@ public class FirstSemesterQuizActivity extends AppCompatActivity {
     private List<Spinner> attendanceSpinners = new ArrayList<>();
     
     private String[] pssQuestions = {
-        "1. In the last month, how often have you been upset because of something that happened unexpectedly?",
-        "2. In the last month, how often have you felt that you were unable to control the important things in your life?",
-        "3. In the last month, how often have you felt nervous and \"stressed\"?",
-        "4. In the last month, how often have you felt confident about your ability to handle your personal problems?",
-        "5. In the last month, how often have you felt that things were going your way?",
-        "6. In the last month, how often have you found that you could not cope with all the things that you had to do?",
-        "7. In the last month, how often have you been able to control irritations in your life?",
-        "8. In the last month, how often have you felt that you were on top of things?",
-        "9. In the last month, how often have you been angered because of things that were outside of your control?",
-        "10. In the last month, how often have you felt difficulties were piling up so high that you could not overcome them?"
+        "1. I found it hard to wind down",
+        "2. I was aware of dryness of my mouth",
+        "3. I couldn't seem to experience any positive feeling at all",
+        "4. I experienced breathing difficulty (e.g., rapid breathing, breathlessness)",
+        "5. I found it difficult to work up the initiative to do things",
+        "6. I tended to over-react to situations",
+        "7. I experienced trembling (e.g., in the hands)",
+        "8. I felt that I was using a lot of nervous energy",
+        "9. I was worried about situations in which I might panic and make a fool of myself",
+        "10. I felt that I had nothing to look forward to",
+        "11. I found myself getting agitated",
+        "12. I found it difficult to relax",
+        "13. I felt down-hearted and blue",
+        "14. I was intolerant of anything that kept me from getting on with what I was doing",
+        "15. I felt I was close to panic",
+        "16. I was unable to become enthusiastic about anything",
+        "17. I felt I wasn't worth much as a person",
+        "18. I felt that I was rather touchy",
+        "19. I was aware of the action of my heart in the absence of physical exertion",
+        "20. I felt scared without any good reason",
+        "21. I felt that life was meaningless"
     };
     private List<Spinner> pssSpinners = new ArrayList<>();
     private int pssTotalScore = 0;
@@ -197,14 +208,15 @@ public class FirstSemesterQuizActivity extends AppCompatActivity {
         answers.add(0.0); // Placeholder
         
         int totalNotionalHours = totalCredits * 50;
-        int weeklyStudyTarget = totalNotionalHours / 15; // standard 15 week semester
+        int weeklyStudyTarget = (int) Math.round((totalNotionalHours * 0.30) / 15.0);
+        if (weeklyStudyTarget <= 0) weeklyStudyTarget = 10;
 
         // Store target for later so we can save it to history
         this.targetStudyHours = weeklyStudyTarget;
 
         // Step 3: Study Hours
         questions.add("How many hours per week do you realistically commit to focused self-study?");
-        contexts.add("Based on SLQF, your " + totalCredits + " registered credits require " + totalNotionalHours + " notional hours. This equals roughly " + weeklyStudyTarget + " hours of self-study per week.");
+        contexts.add("Based on SLQF, your course load (" + totalCredits + " credits) requires " + totalNotionalHours + " total hours (lectures, labs & self-study). We recommend aiming for at least " + weeklyStudyTarget + " hours of focused self-study per week.");
         questionTypes.add(1);
         answers.add(0.0);
 
@@ -214,9 +226,9 @@ public class FirstSemesterQuizActivity extends AppCompatActivity {
         questionTypes.add(1);
         answers.add(0.0);
         
-        // Step 5: PSS-10 (Dynamic List)
-        questions.add("Perceived Stress Scale (PSS-10)");
-        contexts.add("Please answer the following questions based on your feelings in the last month.");
+        // Step 5: DASS-21 (Dynamic List)
+        questions.add("DASS-21 (Depression, Anxiety & Stress)");
+        contexts.add("Please indicate how much each statement applied to you over the past week.");
         questionTypes.add(3);
         answers.add(0.0);
         
@@ -292,7 +304,12 @@ public class FirstSemesterQuizActivity extends AppCompatActivity {
         pssSpinners.clear();
         LayoutInflater inflater = LayoutInflater.from(this);
         
-        String[] pssOptions = {"Never (0)", "Almost Never (1)", "Sometimes (2)", "Fairly Often (3)", "Very Often (4)"};
+        String[] pssOptions = {
+                "Did not apply to me at all (0)",
+                "Applied to me to some degree (1)",
+                "Applied to me to a considerable degree (2)",
+                "Applied to me very much (3)"
+        };
         ArrayAdapter<String> adapter = new ArrayAdapter<>(this, android.R.layout.simple_spinner_dropdown_item, pssOptions);
 
         for (String pssQuestion : pssQuestions) {
@@ -459,25 +476,35 @@ public class FirstSemesterQuizActivity extends AppCompatActivity {
         double studyHours = answers.get(2);
         double sleepHours = answers.get(3);
         
-        // Calculate PSS-10 Score
-        pssTotalScore = 0;
+        // Calculate DASS-21 Scores (sum * 2)
+        int depSum = 0, anxSum = 0, strSum = 0;
         for (int i = 0; i < pssSpinners.size(); i++) {
-            int score = pssSpinners.get(i).getSelectedItemPosition(); // 0-4 mapping is direct!
-            
-            // Reverse score for questions 4, 5, 7, 8 (array index 3, 4, 6, 7)
-            if (i == 3 || i == 4 || i == 6 || i == 7) {
-                score = 4 - score;
+            int val = pssSpinners.get(i).getSelectedItemPosition(); // 0-3
+            // Depression items (0-indexed): 2, 4, 9, 12, 15, 16, 20
+            if (i == 2 || i == 4 || i == 9 || i == 12 || i == 15 || i == 16 || i == 20) {
+                depSum += val;
             }
-            pssTotalScore += score;
+            // Anxiety items (0-indexed): 1, 3, 6, 8, 14, 18, 19
+            else if (i == 1 || i == 3 || i == 6 || i == 8 || i == 14 || i == 18 || i == 19) {
+                anxSum += val;
+            }
+            // Stress items (0-indexed): 0, 5, 7, 10, 11, 13, 17
+            else {
+                strSum += val;
+            }
         }
+        int depressionScore = depSum * 2;
+        int anxietyScore = anxSum * 2;
+        int stressScore = strSum * 2;
+        pssTotalScore = stressScore; // keep variable for backward compatibility in history
 
-        // Map PSS-10 (0-40) to Model's expected Stress Level (1-5)
+        // Map DASS-21 Stress Score (0-42) to Model's expected Stress Level (1-5)
         double mappedStressLevel = 1.0;
-        if (pssTotalScore <= 8) mappedStressLevel = 1.0;
-        else if (pssTotalScore <= 16) mappedStressLevel = 2.0;
-        else if (pssTotalScore <= 24) mappedStressLevel = 3.0;
-        else if (pssTotalScore <= 32) mappedStressLevel = 4.0;
-        else mappedStressLevel = 5.0;
+        if (stressScore <= 14) mappedStressLevel = 1.0;      // Normal
+        else if (stressScore <= 18) mappedStressLevel = 2.0; // Mild
+        else if (stressScore <= 25) mappedStressLevel = 3.0; // Moderate
+        else if (stressScore <= 33) mappedStressLevel = 4.0; // Severe
+        else mappedStressLevel = 5.0;                        // Extremely Severe
 
         PredictionRequest request = new PredictionRequest();
         request.studentId = studentId;
@@ -485,6 +512,10 @@ public class FirstSemesterQuizActivity extends AppCompatActivity {
         request.moduleAttendances = moduleAttendances;
         request.studyHours = studyHours;
         request.sleepHours = sleepHours;
+        request.stressLevel = mappedStressLevel;
+        request.depressionScore = depressionScore;
+        request.anxietyScore = anxietyScore;
+        request.stressScore = stressScore;
         double passedCgpa = getIntent().getDoubleExtra("cumulativeGpa", 0.0);
         int passedStudentType = getIntent().getIntExtra("studentType", 2);
 
@@ -534,7 +565,10 @@ public class FirstSemesterQuizActivity extends AppCompatActivity {
         historyData.put("targetStudyHours", this.targetStudyHours); // Save SLQF target!
         historyData.put("sleepHours", requestData.sleepHours);
         historyData.put("stressLevel", requestData.stressLevel); // 1-5 scale
-        historyData.put("pssScore", pssTotalScore); // Raw 0-40 scale
+        historyData.put("pssScore", pssTotalScore); // Raw stress score
+        historyData.put("depressionScore", requestData.depressionScore);
+        historyData.put("anxietyScore", requestData.anxietyScore);
+        historyData.put("stressScore", requestData.stressScore);
         historyData.put("acknowledgementsRequired", response.acknowledgementsRequired);
 
         db.collection("AllStudents").document(studentId)

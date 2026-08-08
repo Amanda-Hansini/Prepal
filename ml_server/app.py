@@ -26,6 +26,9 @@ def predict():
             sleep_hours = float(json_data.get('sleep_hours', 0.0))
             stress_level = float(json_data.get('stress_level', 3.0))
             cgpa = float(json_data.get('cgpa', 0.0))
+            depression_score = int(json_data.get('depression_score', 0))
+            anxiety_score = int(json_data.get('anxiety_score', 0))
+            stress_score = int(json_data.get('stress_score', 0))
         except ValueError:
             return jsonify({'error': 'Questionnaire inputs must be valid numbers'}), 400
 
@@ -46,7 +49,7 @@ def predict():
 
         total_credits = sum(float(mod.get('credits', 0)) for mod in extracted_grades)
         if total_credits > 0:
-            min_study_hours = (total_credits * 50) / 15
+            min_study_hours = ((total_credits * 50) * 0.30) / 15
             if study_hours < min_study_hours:
                 acknowledgements_required.append(
                     f"BY-LAW WARNING: You are studying {study_hours} hrs, which is less than the SLQF mandated minimum of {min_study_hours:.1f} hrs for {total_credits} credits. This mathematically lowers your predicted GPA."
@@ -57,9 +60,20 @@ def predict():
                 "HEALTH WARNING: You are deviating from the National Sleep Foundation's 7-9 hour standard, severely impacting cognitive performance and your ML predicted GPA."
             )
 
-        if stress_level >= 4.0:
+        # DASS-21 Mental Health Warnings
+        if depression_score >= 14:
             acknowledgements_required.append(
-                "HEALTH WARNING: Your stress levels are critically high. Consider utilizing campus counseling services to prevent severe academic burnout."
+                "MENTAL HEALTH WARNING (Depression): Your DASS-21 depression score indicates moderate to severe symptoms. Low motivation and mood can impact your academic performance—please reach out to university counseling services."
+            )
+
+        if anxiety_score >= 10:
+            acknowledgements_required.append(
+                "MENTAL HEALTH WARNING (Anxiety): Your DASS-21 anxiety score indicates elevated anxiety levels. High test anxiety can impair exam performance. We recommend speaking with a campus counselor."
+            )
+
+        if stress_score >= 19 or stress_level >= 4.0:
+            acknowledgements_required.append(
+                "HEALTH WARNING (Stress): Your stress levels are elevated. Consider utilizing campus counseling services to prevent academic burnout."
             )
 
         # --- 3. PROCESS CA MARKS (MID + ASSIGNMENT) ---
@@ -67,26 +81,27 @@ def predict():
         valid_assg_marks = []
         failed_credits = 0
 
-        for mod in extracted_grades:
-            mod_name = mod.get('moduleName', 'Unknown Module')
-            mod_credits = float(mod.get('credits', 0))
-            mid = float(mod.get('mid_mark', 0))
-            assg = float(mod.get('assignment_mark', 0))
+        if student_type in [2, 3]:
+            for mod in extracted_grades:
+                mod_name = mod.get('moduleName', 'Unknown Module')
+                mod_credits = float(mod.get('credits', 0))
+                mid = float(mod.get('mid_mark', 0))
+                assg = float(mod.get('assignment_mark', 0))
 
-            ca_total = mid + assg
+                ca_total = mid + assg
 
-            if ca_total < 8:
-                acknowledgements_required.append(
-                    f"DANGER: You scored {ca_total}/40 in {mod_name} continuous assessment. You are barred from the final exam! Speak to your lecturer immediately."
-                )
-                failed_credits += mod_credits
-            else:
-                if ca_total < 15:
+                if ca_total < 8:
                     acknowledgements_required.append(
-                        f"NOTICE: Your CA marks ({ca_total}/40) for {mod_name} are borderline. You must score exceptionally high in the final exam to secure a good grade."
+                        f"DANGER: You scored {ca_total}/40 in {mod_name} continuous assessment. You are barred from the final exam! Speak to your lecturer immediately."
                     )
-                valid_mid_marks.append(mid)
-                valid_assg_marks.append(assg)
+                    failed_credits += mod_credits
+                else:
+                    if ca_total < 15:
+                        acknowledgements_required.append(
+                            f"NOTICE: Your CA marks ({ca_total}/40) for {mod_name} are borderline. You must score exceptionally high in the final exam to secure a good grade."
+                        )
+                    valid_mid_marks.append(mid)
+                    valid_assg_marks.append(assg)
 
         # Calculate ML Averages for passed CA modules
         avg_mid = sum(valid_mid_marks) / len(valid_mid_marks) if valid_mid_marks else 0.0
@@ -103,7 +118,7 @@ def predict():
             predicted_gpa = predict_model_c(cgpa, avg_mid, avg_assg, attendance, study_hours, sleep_hours, stress_level)
         
         # --- 5. APPLY PENALTIES FOR BARRED MODULES ---
-        if total_credits > 0 and failed_credits > 0:
+        if student_type in [2, 3] and total_credits > 0 and failed_credits > 0:
             passed_credits = total_credits - failed_credits
             adjusted_gpa = (predicted_gpa * passed_credits) / total_credits
             predicted_gpa = round(adjusted_gpa, 2)
