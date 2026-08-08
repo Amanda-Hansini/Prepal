@@ -467,24 +467,7 @@ public class StudentHomeActivity extends AppCompatActivity {
             cbMid.setText("Model B (Mid-Semester Fresher):\nPredict using my Midterm & Assignment marks");
             cbMid.setChecked(true);
         } else if (!hasCompletedPrevious && !isWithinReleaseWindow && semIndex >= 2) {
-            tvSub.setText("📢 Official results for your previous semester have been released! To use Model A or Model C and get accurate future predictions, please enter your completed semester grades first.");
-            cbCgpa.setVisibility(android.view.View.GONE);
-            cbCgpa.setChecked(false);
-            cbMid.setText("Predict with Midterm Marks Only (Model B fallback)");
-            cbMid.setChecked(false);
-
-            btnEnterGrades = new androidx.appcompat.widget.AppCompatButton(this);
-            btnEnterGrades.setText("ENTER COMPLETED SEMESTER GRADES");
-            btnEnterGrades.setTextColor(Color.WHITE);
-            btnEnterGrades.setBackgroundColor(Color.parseColor("#1B5E20"));
-            btnEnterGrades.setTypeface(android.graphics.Typeface.DEFAULT_BOLD);
-            android.widget.LinearLayout.LayoutParams gradeParams = new android.widget.LinearLayout.LayoutParams(
-                    android.widget.LinearLayout.LayoutParams.MATCH_PARENT,
-                    android.widget.LinearLayout.LayoutParams.WRAP_CONTENT
-            );
-            gradeParams.setMargins(0, pad, 0, 0);
-            btnEnterGrades.setLayoutParams(gradeParams);
-            root.addView(btnEnterGrades);
+            tvSub.setText("📢 Official results for your previous semester have been released! To use Model A or Model C and get accurate future predictions, please select your model and then enter your completed semester grades.");
         } else if (hasCompletedPrevious) {
             tvSub.setText("You have completed previous semesters (CGPA = " + String.format(java.util.Locale.US, "%.2f", calculatedStudentCgpa) + "). Select the model based on what marks you currently have for " + ((firstSemName != null) ? firstSemName : "this semester") + ":");
         }
@@ -511,13 +494,7 @@ public class StudentHomeActivity extends AppCompatActivity {
         if (btnEnterGrades != null) {
             btnEnterGrades.setOnClickListener(v -> {
                 dialog.dismiss();
-                Intent intent = new Intent(this, ManualResultEntryActivity.class);
-                intent.putExtra("nextStepModelC", true); // Default to Model C to ask for mid marks
-                if (firstSemDocId != null) intent.putExtra("firstSemDocId", firstSemDocId);
-                if (firstSemName != null) intent.putExtra("firstSemName", firstSemName);
-                if (programId != null) intent.putExtra("programId", programId);
-                if (batchId != null) intent.putExtra("batchId", batchId);
-                startActivity(intent);
+                // This fallback is kept just in case but it shouldn't be rendered anymore.
             });
         }
 
@@ -554,18 +531,13 @@ public class StudentHomeActivity extends AppCompatActivity {
                     intent.putExtra("batchId", batchId);
                 }
                 startActivity(intent);
-            } else if (!finalHasCompletedPrevious && !finalIsWithinReleaseWindow && finalSemIndex >= 2 && hasMid) {
-                // Model B fallback when student hasn't entered grades yet
-                Intent intent = new Intent(this, FirstSemesterQuizActivity.class);
-                if (firstSemDocId != null) {
-                    intent.putExtra("semesterDocId", firstSemDocId);
+            } else if (!finalHasCompletedPrevious && !finalIsWithinReleaseWindow && finalSemIndex >= 2) {
+                // Senior student logging in for the first time
+                if (hasMid) {
+                    openManualResultEntryForCgpa(true, firstSemDocId, firstSemName, programId, batchId);
+                } else if (hasCgpa) {
+                    openManualResultEntryForCgpa(false, firstSemDocId, firstSemName, programId, batchId);
                 }
-                intent.putExtra("semesterName", (firstSemName != null && !firstSemName.trim().isEmpty()) ? firstSemName : "SEM01");
-                intent.putExtra("programId", (programId != null && !programId.trim().isEmpty()) ? programId : "BIT");
-                if (batchId != null) {
-                    intent.putExtra("batchId", batchId);
-                }
-                startActivity(intent);
             } else if (finalHasCompletedPrevious) {
                 if (hasMid) {
                     // Model C: Comprehensive Master (Both CGPA and Module marks required)
@@ -583,7 +555,7 @@ public class StudentHomeActivity extends AppCompatActivity {
                     }
                 }
             } else {
-                openManualResultEntryForCgpa(hasMid, firstSemDocId, firstSemName, programId, batchId);
+                openManualResultEntryForCgpa(false, firstSemDocId, firstSemName, programId, batchId);
             }
         });
 
