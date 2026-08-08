@@ -583,7 +583,7 @@ public class StudentHomeActivity extends AppCompatActivity {
                     }
                 }
             } else {
-                openManualResultEntryForCgpa(false, firstSemDocId, firstSemName, programId, batchId);
+                openManualResultEntryForCgpa(hasMid, firstSemDocId, firstSemName, programId, batchId);
             }
         });
 
