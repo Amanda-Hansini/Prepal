@@ -626,8 +626,7 @@ public class ManualResultEntryActivity extends AppCompatActivity {
                     Intent intent = new Intent(this, FirstSemesterQuizActivity.class);
                     String docId = getIntent().getStringExtra("firstSemDocId");
                     if (docId != null) intent.putExtra("semesterDocId", docId);
-                    String semName = getIntent().getStringExtra("firstSemName");
-                    intent.putExtra("semesterName", (semName != null && !semName.trim().isEmpty()) ? semName : "SEM02");
+                    intent.putExtra("semesterName", semesterName);
                     String pId = getIntent().getStringExtra("programId");
                     intent.putExtra("programId", (pId != null && !pId.trim().isEmpty()) ? pId : "BIT");
                     String bId = getIntent().getStringExtra("batchId");
@@ -640,8 +639,7 @@ public class ManualResultEntryActivity extends AppCompatActivity {
                     Intent intent = new Intent(this, QuizActivity.class);
                     String docId = getIntent().getStringExtra("firstSemDocId");
                     if (docId != null) intent.putExtra("semesterDocId", docId);
-                    String semName = getIntent().getStringExtra("firstSemName");
-                    intent.putExtra("semesterName", (semName != null && !semName.trim().isEmpty()) ? semName : "SEM02");
+                    intent.putExtra("semesterName", semesterName);
                     String pId = getIntent().getStringExtra("programId");
                     intent.putExtra("programId", (pId != null && !pId.trim().isEmpty()) ? pId : "BIT");
                     String bId = getIntent().getStringExtra("batchId");

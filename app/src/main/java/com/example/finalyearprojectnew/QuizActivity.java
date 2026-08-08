@@ -208,13 +208,16 @@ public class QuizActivity extends AppCompatActivity {
                             // Find the passed semester in the list
                             int foundIndex = -1;
                             for (int i = 0; i < semesterList.size(); i++) {
-                                if (semesterList.get(i).semesterId.equals(semesterName)) {
+                                SemesterInfo info = semesterList.get(i);
+                                if (semesterName.equals(info.semesterId) || semesterName.equals(info.name)) {
                                     foundIndex = i;
                                     break;
                                 }
                             }
                             if (foundIndex != -1 && foundIndex + 1 < semesterList.size()) {
                                 semesterName = semesterList.get(foundIndex + 1).semesterId;
+                            } else if (foundIndex != -1) {
+                                semesterName = semesterList.get(foundIndex).semesterId;
                             }
                         } else if (passedCgpa <= 0) {
                             // Fresher: Target is the first semester

@@ -512,6 +512,7 @@ public class StudentHomeActivity extends AppCompatActivity {
             btnEnterGrades.setOnClickListener(v -> {
                 dialog.dismiss();
                 Intent intent = new Intent(this, ManualResultEntryActivity.class);
+                intent.putExtra("nextStepModelC", true); // Default to Model C to ask for mid marks
                 if (firstSemDocId != null) intent.putExtra("firstSemDocId", firstSemDocId);
                 if (firstSemName != null) intent.putExtra("firstSemName", firstSemName);
                 if (programId != null) intent.putExtra("programId", programId);
