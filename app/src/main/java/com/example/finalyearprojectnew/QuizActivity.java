@@ -477,9 +477,7 @@ public class QuizActivity extends AppCompatActivity {
         request.cgpa = cumulativeGpa;
         request.results = studentResults;
 
-        if (cumulativeGpa > 0 && studentResults != null && !studentResults.isEmpty()) {
-            request.studentType = 3; // Model C: Comprehensive Master
-        } else if (cumulativeGpa > 0) {
+        if (cumulativeGpa > 0) {
             request.studentType = 1; // Model A: Pre-Semester Baseline
         } else {
             request.studentType = 2; // Model B: Mid-Semester Fresher
