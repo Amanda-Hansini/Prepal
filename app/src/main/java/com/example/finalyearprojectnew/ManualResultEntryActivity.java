@@ -622,14 +622,20 @@ public class ManualResultEntryActivity extends AppCompatActivity {
                 saveSemesterResultsToFirestore(results, semesterName, currentGpa);
                 
                 boolean isModelCNext = getIntent().getBooleanExtra("nextStepModelC", false);
+                String targetSemDocId = getIntent().getStringExtra("targetSemDocId");
+                String targetSemName = getIntent().getStringExtra("targetSemName");
+                String pId = getIntent().getStringExtra("programId");
+                String bId = getIntent().getStringExtra("batchId");
+
                 if (isModelCNext) {
                     Intent intent = new Intent(this, FirstSemesterQuizActivity.class);
-                    String docId = getIntent().getStringExtra("firstSemDocId");
-                    if (docId != null) intent.putExtra("semesterDocId", docId);
-                    intent.putExtra("semesterName", semesterName);
-                    String pId = getIntent().getStringExtra("programId");
+                    if (targetSemDocId != null) intent.putExtra("semesterDocId", targetSemDocId);
+                    if (targetSemName != null) {
+                        intent.putExtra("semesterName", targetSemName);
+                    } else {
+                        intent.putExtra("semesterName", semesterName); // fallback
+                    }
                     intent.putExtra("programId", (pId != null && !pId.trim().isEmpty()) ? pId : "BIT");
-                    String bId = getIntent().getStringExtra("batchId");
                     if (bId != null) intent.putExtra("batchId", bId);
                     
                     intent.putExtra("cumulativeGpa", cumulativeGpa);
@@ -637,12 +643,13 @@ public class ManualResultEntryActivity extends AppCompatActivity {
                     startActivity(intent);
                 } else {
                     Intent intent = new Intent(this, QuizActivity.class);
-                    String docId = getIntent().getStringExtra("firstSemDocId");
-                    if (docId != null) intent.putExtra("semesterDocId", docId);
-                    intent.putExtra("semesterName", semesterName);
-                    String pId = getIntent().getStringExtra("programId");
+                    if (targetSemDocId != null) intent.putExtra("semesterDocId", targetSemDocId);
+                    if (targetSemName != null) {
+                        intent.putExtra("semesterName", targetSemName);
+                    } else {
+                        intent.putExtra("semesterName", semesterName); // fallback
+                    }
                     intent.putExtra("programId", (pId != null && !pId.trim().isEmpty()) ? pId : "BIT");
-                    String bId = getIntent().getStringExtra("batchId");
                     if (bId != null) intent.putExtra("batchId", bId);
 
                     intent.putExtra("cumulativeGpa", cumulativeGpa);

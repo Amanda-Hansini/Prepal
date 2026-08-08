@@ -317,26 +317,30 @@ public class StudentHomeActivity extends AppCompatActivity {
                                         return id1.compareTo(id2);
                                     });
 
-                                    String activeSemDocId = null;
-                                    String activeSemName = "SEM01";
-                                    DocumentSnapshot activeSemDoc = null;
+                                    String realSemDocId = null;
+                                    String realSemName = "SEM01";
+                                    DocumentSnapshot realSemDoc = null;
+                                    int realSemIndex = 1;
 
                                     if (!sems.isEmpty()) {
                                         java.util.Date today = new java.util.Date();
                                         java.text.SimpleDateFormat sdf = new java.text.SimpleDateFormat("yyyy-MM-dd", java.util.Locale.US);
 
-                                        // First priority: check if any semester explicitly has status "Active" in Firestore
-                                        for (DocumentSnapshot doc : sems) {
+                                        // 1. Find Real Current Semester by "Active" status
+                                        for (int i = 0; i < sems.size(); i++) {
+                                            DocumentSnapshot doc = sems.get(i);
                                             String st = doc.getString("status");
                                             if (st != null && st.trim().equalsIgnoreCase("Active")) {
-                                                activeSemDoc = doc;
+                                                realSemDoc = doc;
+                                                realSemIndex = i + 1;
                                                 break;
                                             }
                                         }
 
-                                        // Second priority: fall back to checking if today falls between startDate and endDate
-                                        if (activeSemDoc == null) {
-                                            for (DocumentSnapshot doc : sems) {
+                                        // 2. Fall back to dates
+                                        if (realSemDoc == null) {
+                                            for (int i = 0; i < sems.size(); i++) {
+                                                DocumentSnapshot doc = sems.get(i);
                                                 String startStr = doc.getString("startDate");
                                                 String endStr = doc.getString("endDate");
                                                 try {
@@ -344,7 +348,8 @@ public class StudentHomeActivity extends AppCompatActivity {
                                                         java.util.Date sDate = sdf.parse(startStr.trim());
                                                         java.util.Date eDate = sdf.parse(endStr.trim());
                                                         if (!today.before(sDate) && !today.after(eDate)) {
-                                                            activeSemDoc = doc;
+                                                            realSemDoc = doc;
+                                                            realSemIndex = i + 1;
                                                             break;
                                                         }
                                                     }
@@ -354,26 +359,89 @@ public class StudentHomeActivity extends AppCompatActivity {
                                             }
                                         }
 
-                                        if (activeSemDoc == null) {
-                                            int completedCount = (allSemesters != null) ? allSemesters.size() : 0;
-                                            if (completedCount < sems.size()) {
-                                                activeSemDoc = sems.get(completedCount);
-                                            } else {
-                                                activeSemDoc = sems.get(sems.size() - 1);
-                                            }
+                                        // 3. Fall back to the very first semester if no dates are set
+                                        if (realSemDoc == null) {
+                                            realSemDoc = sems.get(0);
+                                            realSemIndex = 1;
                                         }
 
-                                        activeSemDocId = activeSemDoc.getId();
-                                        String semIdAttr = activeSemDoc.getString("semesterId");
-                                        if (semIdAttr != null && !semIdAttr.trim().isEmpty()) {
-                                            activeSemName = semIdAttr;
-                                        } else {
-                                            activeSemName = activeSemDocId;
+                                        realSemDocId = realSemDoc.getId();
+                                        String semIdAttr = realSemDoc.getString("semesterId");
+                                        realSemName = (semIdAttr != null && !semIdAttr.trim().isEmpty()) ? semIdAttr : realSemDocId;
+                                    }
+
+                                    // Check release window for the REAL semester
+                                    boolean isWithinReleaseWindow = true;
+                                    if (realSemIndex >= 2 && realSemDoc != null) {
+                                        String startStr = realSemDoc.getString("startDate");
+                                        try {
+                                            if (startStr != null && !startStr.equalsIgnoreCase("Not Set")) {
+                                                java.text.SimpleDateFormat sdf = new java.text.SimpleDateFormat("yyyy-MM-dd", java.util.Locale.US);
+                                                java.util.Date sDate = sdf.parse(startStr.trim());
+                                                java.util.Date today = new java.util.Date();
+                                                long diffWeeks = (today.getTime() - sDate.getTime()) / (1000L * 60 * 60 * 24 * 7);
+                                                if (diffWeeks > 10) {
+                                                    isWithinReleaseWindow = false;
+                                                }
+                                            } else {
+                                                isWithinReleaseWindow = false;
+                                            }
+                                        } catch (Exception e) {
+                                            isWithinReleaseWindow = false;
                                         }
                                     }
 
-                                    // Show selection modal to identify Model A, B, or C for the active semester!
-                                    showDataSelectionDialog(programId, batchId, activeSemName, activeSemDocId, activeSemDoc, sems);
+                                    int completedCount = (allSemesters != null) ? allSemesters.size() : 0;
+                                    
+                                    // Calculate target Predict and past Results semesters for Catch-Up workflow
+                                    int targetPredictSemIndex = 1;
+                                    int pastResultsSemIndex = -1;
+                                    
+                                    if (completedCount == 0) {
+                                        if (realSemIndex == 1 || (realSemIndex == 2 && isWithinReleaseWindow)) {
+                                            // True Fresher
+                                            targetPredictSemIndex = 1;
+                                            pastResultsSemIndex = -1;
+                                        } else {
+                                            // Senior catching up from beginning
+                                            targetPredictSemIndex = 2;
+                                            pastResultsSemIndex = 1;
+                                        }
+                                    } else {
+                                        if (completedCount < realSemIndex - 1) {
+                                            // Still catching up
+                                            targetPredictSemIndex = completedCount + 2;
+                                            pastResultsSemIndex = completedCount + 1;
+                                        } else {
+                                            // Caught up
+                                            targetPredictSemIndex = realSemIndex;
+                                            pastResultsSemIndex = -1; // Already entered all past results
+                                        }
+                                    }
+                                    
+                                    // Guard bounds
+                                    if (targetPredictSemIndex > sems.size()) targetPredictSemIndex = sems.size();
+                                    if (targetPredictSemIndex < 1) targetPredictSemIndex = 1;
+                                    
+                                    DocumentSnapshot targetSemDoc = sems.get(targetPredictSemIndex - 1);
+                                    String targetSemDocId = targetSemDoc.getId();
+                                    String targetSemAttr = targetSemDoc.getString("semesterId");
+                                    String targetSemName = (targetSemAttr != null && !targetSemAttr.trim().isEmpty()) ? targetSemAttr : targetSemDocId;
+                                    
+                                    String pastSemDocId = null;
+                                    String pastSemName = null;
+                                    if (pastResultsSemIndex >= 1 && pastResultsSemIndex <= sems.size()) {
+                                        DocumentSnapshot pastSemDoc = sems.get(pastResultsSemIndex - 1);
+                                        pastSemDocId = pastSemDoc.getId();
+                                        String pastSemAttr = pastSemDoc.getString("semesterId");
+                                        pastSemName = (pastSemAttr != null && !pastSemAttr.trim().isEmpty()) ? pastSemAttr : pastSemDocId;
+                                    }
+
+                                    // Show selection modal
+                                    showDataSelectionDialog(programId, batchId, 
+                                        targetSemName, targetSemDocId, targetPredictSemIndex, 
+                                        pastSemName, pastSemDocId, pastResultsSemIndex,
+                                        isWithinReleaseWindow);
                                 })
                                 .addOnFailureListener(e -> fallbackToManualEntry());
                     } else {
@@ -384,10 +452,13 @@ public class StudentHomeActivity extends AppCompatActivity {
     }
 
     private void fallbackToManualEntry() {
-        showDataSelectionDialog("BIT", "", "SEM01", null, null, new ArrayList<>());
+        showDataSelectionDialog("BIT", "", "SEM01", null, 1, null, null, -1, false);
     }
 
-    private void showDataSelectionDialog(String programId, String batchId, String firstSemName, String firstSemDocId, DocumentSnapshot activeSemDoc, List<DocumentSnapshot> sems) {
+    private void showDataSelectionDialog(String programId, String batchId, 
+            String targetSemName, String targetSemDocId, int targetSemIndex,
+            String pastSemName, String pastSemDocId, int pastSemIndex,
+            boolean isWithinReleaseWindow) {
         androidx.appcompat.app.AlertDialog.Builder builder = new androidx.appcompat.app.AlertDialog.Builder(this);
 
         android.widget.LinearLayout root = new android.widget.LinearLayout(this);
@@ -425,51 +496,18 @@ public class StudentHomeActivity extends AppCompatActivity {
         cbMid.setPadding(0, pad / 4, 0, pad / 4);
         root.addView(cbMid);
 
-        int semIndex = 1;
-        if (sems != null && activeSemDoc != null) {
-            int idx = sems.indexOf(activeSemDoc);
-            if (idx >= 0) semIndex = idx + 1;
-        } else if (firstSemName != null) {
-            if (firstSemName.toUpperCase().contains("02") || firstSemName.toUpperCase().contains("SEM02")) semIndex = 2;
-            else if (firstSemName.toUpperCase().contains("03") || firstSemName.toUpperCase().contains("SEM03")) semIndex = 3;
-            else if (firstSemName.toUpperCase().contains("04") || firstSemName.toUpperCase().contains("SEM04")) semIndex = 4;
-            else if (firstSemName.toUpperCase().contains("05") || firstSemName.toUpperCase().contains("SEM05")) semIndex = 5;
-            else if (firstSemName.toUpperCase().contains("06") || firstSemName.toUpperCase().contains("SEM06")) semIndex = 6;
-        }
+        boolean hasCompletedPrevious = (pastSemIndex == -1 && calculatedStudentCgpa > 0.0);
 
-        boolean isWithinReleaseWindow = true;
-        if (semIndex >= 2 && activeSemDoc != null) {
-            String startStr = activeSemDoc.getString("startDate");
-            try {
-                if (startStr != null && !startStr.equalsIgnoreCase("Not Set")) {
-                    java.text.SimpleDateFormat sdf = new java.text.SimpleDateFormat("yyyy-MM-dd", java.util.Locale.US);
-                    java.util.Date sDate = sdf.parse(startStr.trim());
-                    java.util.Date today = new java.util.Date();
-                    long diffWeeks = (today.getTime() - sDate.getTime()) / (1000L * 60 * 60 * 24 * 7);
-                    if (diffWeeks > 10) {
-                        isWithinReleaseWindow = false;
-                    }
-                } else {
-                    isWithinReleaseWindow = false;
-                }
-            } catch (Exception e) {
-                isWithinReleaseWindow = false;
-            }
-        }
-
-        boolean hasCompletedPrevious = (allSemesters != null && !allSemesters.isEmpty()) || (calculatedStudentCgpa > 0.0);
-
-        androidx.appcompat.widget.AppCompatButton btnEnterGrades = null;
-        if (!hasCompletedPrevious && (semIndex == 1 || (semIndex == 2 && isWithinReleaseWindow))) {
-            tvSub.setText("As a First Year First Semester student (or awaiting Semester 1 results release within 5–10 weeks of Semester 2), you do not have a Cumulative GPA yet. Predict your GPA using your current Midterm & Assignment marks:");
+        if (targetSemIndex == 1 || (targetSemIndex == 2 && isWithinReleaseWindow && pastSemIndex == -1)) {
+            tvSub.setText("As a First Year First Semester student (or awaiting Semester 1 results), you do not have a Cumulative GPA yet. Predict your GPA using your current Midterm & Assignment marks:");
             cbCgpa.setVisibility(android.view.View.GONE);
             cbCgpa.setChecked(false);
             cbMid.setText("Model B (Mid-Semester Fresher):\nPredict using my Midterm & Assignment marks");
             cbMid.setChecked(true);
-        } else if (!hasCompletedPrevious && !isWithinReleaseWindow && semIndex >= 2) {
-            tvSub.setText("📢 Official results for your previous semester have been released! To use Model A or Model C and get accurate future predictions, please select your model and then enter your completed semester grades.");
+        } else if (pastSemIndex != -1) {
+            tvSub.setText("📢 You are catching up! First you need to enter your past grades for " + pastSemName + " so PrePal can calculate your official CGPA. Then PrePal will predict your GPA for " + targetSemName + ". Select your prediction model:");
         } else if (hasCompletedPrevious) {
-            tvSub.setText("You have completed previous semesters (CGPA = " + String.format(java.util.Locale.US, "%.2f", calculatedStudentCgpa) + "). Select the model based on what marks you currently have for " + ((firstSemName != null) ? firstSemName : "this semester") + ":");
+            tvSub.setText("You have completed previous semesters (CGPA = " + String.format(java.util.Locale.US, "%.2f", calculatedStudentCgpa) + "). Select the model based on what marks you currently have for " + ((targetSemName != null) ? targetSemName : "this semester") + ":");
         }
 
         androidx.appcompat.widget.AppCompatButton btnContinue = new androidx.appcompat.widget.AppCompatButton(this);
@@ -491,17 +529,6 @@ public class StudentHomeActivity extends AppCompatActivity {
             dialog.getWindow().setBackgroundDrawable(new android.graphics.drawable.ColorDrawable(Color.TRANSPARENT));
         }
 
-        if (btnEnterGrades != null) {
-            btnEnterGrades.setOnClickListener(v -> {
-                dialog.dismiss();
-                // This fallback is kept just in case but it shouldn't be rendered anymore.
-            });
-        }
-
-        final int finalSemIndex = semIndex;
-        final boolean finalIsWithinReleaseWindow = isWithinReleaseWindow;
-        final boolean finalHasCompletedPrevious = hasCompletedPrevious;
-
         btnContinue.setOnClickListener(v -> {
             boolean hasCgpa = cbCgpa.isChecked();
             boolean hasMid = cbMid.isChecked();
@@ -519,88 +546,86 @@ public class StudentHomeActivity extends AppCompatActivity {
                 hasMid = true;
             }
 
-            if (!finalHasCompletedPrevious && (finalSemIndex == 1 || (finalSemIndex == 2 && finalIsWithinReleaseWindow))) {
-                // Model B: Mid-Semester Fresher (No CGPA, module marks required)
+            if (targetSemIndex == 1 || (targetSemIndex == 2 && isWithinReleaseWindow && pastSemIndex == -1)) {
+                // Model B: Mid-Semester Fresher
                 Intent intent = new Intent(this, FirstSemesterQuizActivity.class);
-                if (firstSemDocId != null) {
-                    intent.putExtra("semesterDocId", firstSemDocId);
+                if (targetSemDocId != null) {
+                    intent.putExtra("semesterDocId", targetSemDocId);
                 }
-                intent.putExtra("semesterName", (firstSemName != null && !firstSemName.trim().isEmpty()) ? firstSemName : "SEM01");
+                intent.putExtra("semesterName", (targetSemName != null && !targetSemName.trim().isEmpty()) ? targetSemName : "SEM01");
                 intent.putExtra("programId", (programId != null && !programId.trim().isEmpty()) ? programId : "BIT");
                 if (batchId != null) {
                     intent.putExtra("batchId", batchId);
                 }
                 startActivity(intent);
-            } else if (!finalHasCompletedPrevious && finalSemIndex >= 2) {
-                // Senior student logging in for the first time (regardless of release window)
+            } else if (pastSemIndex != -1) {
+                // Catching up - needs to enter past results first
                 if (hasMid) {
-                    openManualResultEntryForCgpa(true, firstSemDocId, firstSemName, programId, batchId);
+                    openManualResultEntryForCgpa(true, pastSemDocId, pastSemName, targetSemDocId, targetSemName, programId, batchId);
                 } else if (hasCgpa) {
-                    openManualResultEntryForCgpa(false, firstSemDocId, firstSemName, programId, batchId);
-                }
-            } else if (finalHasCompletedPrevious) {
-                if (hasMid) {
-                    // Model C: Comprehensive Master (Both CGPA and Module marks required)
-                    if (calculatedStudentCgpa <= 0.0) {
-                        openManualResultEntryForCgpa(true, firstSemDocId, firstSemName, programId, batchId);
-                    } else {
-                        launchModelWithCgpa(true, calculatedStudentCgpa, firstSemDocId, firstSemName, programId, batchId);
-                    }
-                } else if (hasCgpa) {
-                    // Model A: Pre-Semester Baseline (CGPA only, no module midterms required)
-                    if (calculatedStudentCgpa <= 0.0) {
-                        openManualResultEntryForCgpa(false, firstSemDocId, firstSemName, programId, batchId);
-                    } else {
-                        launchModelWithCgpa(false, calculatedStudentCgpa, firstSemDocId, firstSemName, programId, batchId);
-                    }
+                    openManualResultEntryForCgpa(false, pastSemDocId, pastSemName, targetSemDocId, targetSemName, programId, batchId);
                 }
             } else {
-                openManualResultEntryForCgpa(false, firstSemDocId, firstSemName, programId, batchId);
+                // Fully caught up - has CGPA in DB
+                if (hasMid) {
+                    if (calculatedStudentCgpa <= 0.0) {
+                        openManualResultEntryForCgpa(true, pastSemDocId, pastSemName, targetSemDocId, targetSemName, programId, batchId);
+                    } else {
+                        launchModelWithCgpa(true, calculatedStudentCgpa, targetSemDocId, targetSemName, programId, batchId);
+                    }
+                } else if (hasCgpa) {
+                    if (calculatedStudentCgpa <= 0.0) {
+                        openManualResultEntryForCgpa(false, pastSemDocId, pastSemName, targetSemDocId, targetSemName, programId, batchId);
+                    } else {
+                        launchModelWithCgpa(false, calculatedStudentCgpa, targetSemDocId, targetSemName, programId, batchId);
+                    }
+                }
             }
         });
 
         dialog.show();
     }
 
-    private void openManualResultEntryForCgpa(boolean isModelC, String firstSemDocId, String firstSemName, String programId, String batchId) {
-        android.widget.Toast.makeText(this, "Please enter your completed semester grades first so PrePal can calculate your official CGPA!", android.widget.Toast.LENGTH_LONG).show();
+    private void openManualResultEntryForCgpa(boolean isModelC, 
+            String pastSemDocId, String pastSemName, 
+            String targetSemDocId, String targetSemName, 
+            String programId, String batchId) {
+        if (pastSemName != null) {
+            android.widget.Toast.makeText(this, "Please enter your completed grades for " + pastSemName + " first so PrePal can calculate your official CGPA!", android.widget.Toast.LENGTH_LONG).show();
+        } else {
+            android.widget.Toast.makeText(this, "Please enter your completed semester grades first so PrePal can calculate your official CGPA!", android.widget.Toast.LENGTH_LONG).show();
+        }
         Intent intent = new Intent(this, ManualResultEntryActivity.class);
         if (isModelC) {
             intent.putExtra("nextStepModelC", true);
-            if (firstSemDocId != null) intent.putExtra("firstSemDocId", firstSemDocId);
-            if (firstSemName != null) intent.putExtra("firstSemName", firstSemName);
-            if (programId != null) intent.putExtra("programId", programId);
-            if (batchId != null) intent.putExtra("batchId", batchId);
         }
+        if (pastSemDocId != null) intent.putExtra("semesterDocId", pastSemDocId);
+        if (pastSemName != null) intent.putExtra("semesterName", pastSemName);
+        if (targetSemDocId != null) intent.putExtra("targetSemDocId", targetSemDocId);
+        if (targetSemName != null) intent.putExtra("targetSemName", targetSemName);
+        if (programId != null) intent.putExtra("programId", programId);
+        if (batchId != null) intent.putExtra("batchId", batchId);
         startActivity(intent);
     }
 
-    private void launchModelWithCgpa(boolean isModelC, double cgpaToUse, String firstSemDocId, String firstSemName, String programId, String batchId) {
+    private void launchModelWithCgpa(boolean isModelC, double cgpaToUse, String targetSemDocId, String targetSemName, String programId, String batchId) {
         if (isModelC) {
-            // Model C: Comprehensive Master (CGPA + Module Midterm/Assignment marks)
+            // Model C
             Intent intent = new Intent(this, FirstSemesterQuizActivity.class);
-            if (firstSemDocId != null) {
-                intent.putExtra("semesterDocId", firstSemDocId);
-            }
-            intent.putExtra("semesterName", (firstSemName != null && !firstSemName.trim().isEmpty()) ? firstSemName : "SEM01");
+            if (targetSemDocId != null) intent.putExtra("semesterDocId", targetSemDocId);
+            intent.putExtra("semesterName", (targetSemName != null && !targetSemName.trim().isEmpty()) ? targetSemName : "SEM01");
             intent.putExtra("programId", (programId != null && !programId.trim().isEmpty()) ? programId : "BIT");
-            if (batchId != null) {
-                intent.putExtra("batchId", batchId);
-            }
+            if (batchId != null) intent.putExtra("batchId", batchId);
             intent.putExtra("cumulativeGpa", cgpaToUse);
             intent.putExtra("studentType", 3);
             startActivity(intent);
         } else {
-            // Model A: Pre-Semester Baseline (CGPA only, no module midterms required)
+            // Model A
             Intent intent = new Intent(this, QuizActivity.class);
-            if (firstSemDocId != null) {
-                intent.putExtra("semesterDocId", firstSemDocId);
-            }
-            intent.putExtra("semesterName", (firstSemName != null && !firstSemName.trim().isEmpty()) ? firstSemName : "SEM01");
+            if (targetSemDocId != null) intent.putExtra("semesterDocId", targetSemDocId);
+            intent.putExtra("semesterName", (targetSemName != null && !targetSemName.trim().isEmpty()) ? targetSemName : "SEM01");
             intent.putExtra("programId", (programId != null && !programId.trim().isEmpty()) ? programId : "BIT");
-            if (batchId != null) {
-                intent.putExtra("batchId", batchId);
-            }
+            if (batchId != null) intent.putExtra("batchId", batchId);
             intent.putExtra("cumulativeGpa", cgpaToUse);
             intent.putExtra("results", new java.util.ArrayList<Map<String, Object>>());
             startActivity(intent);

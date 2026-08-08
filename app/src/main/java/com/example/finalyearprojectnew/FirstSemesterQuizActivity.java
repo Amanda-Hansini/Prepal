@@ -177,40 +177,9 @@ public class FirstSemesterQuizActivity extends AppCompatActivity {
                     dialog.dismiss();
                     
                     if (!queryDocumentSnapshots.isEmpty()) {
-                        List<SemesterInfo> semesterList = new ArrayList<>();
-                        for (com.google.firebase.firestore.DocumentSnapshot doc : queryDocumentSnapshots) {
-                            String sId = doc.getString("semesterId");
-                            if (sId != null) {
-                                semesterList.add(new SemesterInfo(doc.getId(), doc.getString("name"), sId));
-                            }
-                        }
-
-                        java.util.Collections.sort(semesterList, (s1, s2) -> Integer.compare(extractNumber(s1.semesterId), extractNumber(s2.semesterId)));
-
-                        double passedCgpa = getIntent().getDoubleExtra("cumulativeGpa", 0.0);
-                        if (passedCgpa > 0 && semesterName != null && !semesterName.equals("SEM01") && !semesterName.equals("SEM02")) {
-                            // Find the passed semester in the list
-                            int foundIndex = -1;
-                            for (int i = 0; i < semesterList.size(); i++) {
-                                SemesterInfo info = semesterList.get(i);
-                                if (semesterName.trim().equalsIgnoreCase(info.semesterId.trim()) || 
-                                    semesterName.trim().equalsIgnoreCase(info.name.trim())) {
-                                    foundIndex = i;
-                                    break;
-                                }
-                            }
-                            if (foundIndex != -1 && foundIndex + 1 < semesterList.size()) {
-                                semesterName = semesterList.get(foundIndex + 1).semesterId;
-                            } else if (foundIndex != -1) {
-                                // If it's the last semester, just predict the last one again or maybe just use it
-                                semesterName = semesterList.get(foundIndex).semesterId;
-                            }
-                        } else if (passedCgpa <= 0) {
-                            // Fresher: Target is the first semester
-                            if (semesterList.size() > 0) {
-                                semesterName = semesterList.get(0).semesterId;
-                            }
-                        }
+                        // The target semester is already passed in correctly from the previous activities,
+                        // so we don't need to manually calculate the next semester here.
+                        // (Removed the legacy auto-increment logic)
                     }
                     
                     fetchModulesFromDatabase();
