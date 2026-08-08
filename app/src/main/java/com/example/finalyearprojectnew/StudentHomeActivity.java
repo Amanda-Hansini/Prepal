@@ -531,8 +531,8 @@ public class StudentHomeActivity extends AppCompatActivity {
                     intent.putExtra("batchId", batchId);
                 }
                 startActivity(intent);
-            } else if (!finalHasCompletedPrevious && !finalIsWithinReleaseWindow && finalSemIndex >= 2) {
-                // Senior student logging in for the first time
+            } else if (!finalHasCompletedPrevious && finalSemIndex >= 2) {
+                // Senior student logging in for the first time (regardless of release window)
                 if (hasMid) {
                     openManualResultEntryForCgpa(true, firstSemDocId, firstSemName, programId, batchId);
                 } else if (hasCgpa) {

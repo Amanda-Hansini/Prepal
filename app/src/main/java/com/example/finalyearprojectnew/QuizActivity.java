@@ -209,7 +209,8 @@ public class QuizActivity extends AppCompatActivity {
                             int foundIndex = -1;
                             for (int i = 0; i < semesterList.size(); i++) {
                                 SemesterInfo info = semesterList.get(i);
-                                if (semesterName.equals(info.semesterId) || semesterName.equals(info.name)) {
+                                if (semesterName.trim().equalsIgnoreCase(info.semesterId.trim()) || 
+                                    semesterName.trim().equalsIgnoreCase(info.name.trim())) {
                                     foundIndex = i;
                                     break;
                                 }
@@ -266,13 +267,11 @@ public class QuizActivity extends AppCompatActivity {
                 String moduleName = "";
                 Object mNameObj = module.get("module_name");
                 if (mNameObj == null) mNameObj = module.get("moduleName");
-                if (mNameObj == null) mNameObj = module.get("name");
                 if (mNameObj != null) moduleName = mNameObj.toString();
 
                 String moduleId = "";
                 Object mIdObj = module.get("module_id");
                 if (mIdObj == null) mIdObj = module.get("moduleId");
-                if (mIdObj == null) mIdObj = module.get("moduleCode");
                 if (mIdObj != null) moduleId = mIdObj.toString();
 
                 moduleNamesForAttendance.add(moduleName);
@@ -553,11 +552,8 @@ public class QuizActivity extends AppCompatActivity {
         request.cgpa = cumulativeGpa;
         request.results = studentResults;
 
-        if (cumulativeGpa > 0) {
-            request.studentType = 1; // Model A: Pre-Semester Baseline
-        } else {
-            request.studentType = 2; // Model B: Mid-Semester Fresher
-        }
+        // QuizActivity is strictly for Model A
+        request.studentType = 1; // Model A: Pre-Semester Baseline
 
         RetrofitClient.getApiService().predictGpa(request).enqueue(new Callback<PredictionResponse>() {
             @Override

@@ -49,4 +49,13 @@ public class PredictionRequest {
 
     @SerializedName("ol_english")
     public String olEnglish;
+
+    @SerializedName("depression_score")
+    public int depressionScore;
+
+    @SerializedName("anxiety_score")
+    public int anxietyScore;
+
+    @SerializedName("stress_score")
+    public int stressScore;
 }
